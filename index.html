@@ -595,6 +595,7 @@
     if (status === 401 || status === 403) return gErr('key', 'APIキーが無効か、このキーでは Gemini API が使えません（' + m.slice(0, 80) + '）');
     if (status === 404 || /not found|is not supported|no longer available|deprecated/i.test(m)) return gErr('model', 'モデル「' + settings.model + '」が見つかりません');
     if (status === 429) return gErr('quota', '利用上限に達しました。しばらく待ってから再試行してください');
+    if (status === 503 || status === 500 || status === 504) return gErr('busy', 'Gemini が混み合っています（' + status + '）。少し時間をおいて再試行してください');
     if (status >= 500) return gErr('server', 'Gemini 側で一時的なエラーが発生しました（' + status + '）');
     return gErr('other', m ? m.slice(0, 160) : 'HTTP ' + status);
   }
@@ -609,24 +610,27 @@
     });
   }
   // 使えるモデルを一覧から自動選択
-  function pickModel() {
+  function pickModel(exclude) {
+    exclude = exclude || [];
     return fetchT(GAPI + 'models?pageSize=200&key=' + encodeURIComponent(settings.apiKey), { method: 'GET' }, 20000).then(function (r) {
       if (!r.ok) return r.text().then(function (t) { var m = ''; try { m = JSON.parse(t).error.message; } catch (e) {} throw explainGeminiError(r.status, m); });
       return r.json();
     }).then(function (d) {
       var names = (d.models || []).filter(function (m) { return (m.supportedGenerationMethods || []).indexOf('generateContent') >= 0; })
         .map(function (m) { return m.name.replace(/^models\//, ''); })
-        .filter(function (n) { return /^gemini-/.test(n) && !/(image|tts|audio|live|embedding|vision|aqa|learnlm|robotics|computer)/.test(n); });
+        .filter(function (n) { return /^gemini-/.test(n) && !/(image|tts|audio|live|embedding|vision|aqa|learnlm|robotics|computer)/.test(n) && exclude.indexOf(n) < 0; });
       if (!names.length) throw gErr('model', 'このキーで使える Gemini モデルが見つかりませんでした');
       var score = function (n) {
         var v = parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [0, 0])[1]) || 0;
-        return v * 100 + (/flash/.test(n) ? 20 : 0) + (/lite/.test(n) ? -8 : 0) + (/(preview|exp)/.test(n) ? -15 : 0) + (/latest/.test(n) ? 3 : 0) + (/pro/.test(n) ? -5 : 0);
+        return v * 100 + (/flash/.test(n) ? 20 : 0) + (/lite/.test(n) ? -8 : 0) + (/(preview|exp)/.test(n) ? -60 : 0) + (/latest/.test(n) ? 3 : 0) + (/pro/.test(n) ? -5 : 0);
       };
       names.sort(function (a, b) { return score(b) - score(a); });
       return names[0];
     });
   }
-  function geminiText(prompt, temperature, _retried) {
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function geminiText(prompt, temperature, st) {
+    st = st || { retries: 0, tried: [] };
     var model = settings.model || 'gemini-2.5-flash';
     return fetchT(GAPI + 'models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(settings.apiKey), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -642,12 +646,19 @@
       }
       return c.content.parts.map(function (p) { return p.thought ? '' : (p.text || ''); }).join('');
     }).catch(function (err) {
-      if (err && err.code === 'model' && !_retried) {
-        return pickModel().then(function (m) {
+      var code = err && err.code;
+      // 混雑（503など）：少し待って再試行 → それでもダメなら別モデルへ
+      if (code === 'busy' && st.retries < 2) {
+        st.retries++;
+        return wait(1500 * st.retries).then(function () { return geminiText(prompt, temperature, st); });
+      }
+      if ((code === 'busy' || code === 'model') && st.tried.length < 2) {
+        st.tried.push(model); st.retries = 0;
+        return pickModel(st.tried).then(function (m) {
           settings.model = m; saveSettings();
           toast('モデルを「' + m + '」に自動で切り替えました');
-          return geminiText(prompt, temperature, true);
-        });
+          return geminiText(prompt, temperature, st);
+        }, function () { throw err; });
       }
       throw err;
     });
