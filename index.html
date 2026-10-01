@@ -1,0 +1,1740 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f8fafc">
+<meta name="color-scheme" content="light">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>Phrase Trainer — 英語フレーズ例文ジェネレーター</title>
+<script>
+  /* Tailwind CDN が出す「本番では使わないで」という注意表示だけを抑止（動作には無関係） */
+  (function () {
+    var w = console.warn;
+    console.warn = function () {
+      var m = arguments[0];
+      if (typeof m === 'string' && m.indexOf('cdn.tailwindcss.com') !== -1) return;
+      return w.apply(console, arguments);
+    };
+  })();
+</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* Tailwind CDN が読めない環境でも白背景・読める状態を保証するベーススタイル */
+  html, body { background:#f8fafc; color:#1e293b; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Segoe UI",Roboto,sans-serif; -webkit-text-size-adjust:100%; -webkit-font-smoothing:antialiased; }
+  /* SVG 巨大化防止ガード */
+  svg.ic { width:18px !important; height:18px !important; min-width:18px !important; max-width:18px !important; max-height:18px !important; flex-shrink:0; display:inline-block; vertical-align:middle; }
+  input, select, textarea { font-size:16px; } /* iOSのズーム防止 */
+  button { -webkit-tap-highlight-color:transparent; cursor:pointer; }
+  .no-scrollbar::-webkit-scrollbar { display:none; } .no-scrollbar { scrollbar-width:none; }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  @keyframes spin { to { transform: rotate(360deg); } } .spin { animation: spin 1s linear infinite; }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(8px);} to { opacity:1; transform:none; } } .fade-up { animation: fadeUp .32s ease both; }
+  @keyframes pulseBg { 0%,100%{opacity:.55} 50%{opacity:1} } .skeleton { animation: pulseBg 1.2s ease-in-out infinite; }
+  @keyframes micPulse { 0% { box-shadow: 0 0 0 0 rgba(244,63,94,.45); } 70% { box-shadow: 0 0 0 12px rgba(244,63,94,0); } 100% { box-shadow: 0 0 0 0 rgba(244,63,94,0); } }
+  .mic-pulse { animation: micPulse 1.4s ease-out infinite; }
+  .blank { display:inline-block; height:1.05em; vertical-align:-3px; border-radius:5px; background:#e2e8f0; margin:0 1px; }
+  mark.hl { background:#fef3c7; color:#0f172a; border-radius:4px; padding:0 2px; }
+  #toast { transition: opacity .2s ease, transform .2s ease; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased">
+<div id="app" class="min-h-screen pb-28 md:pb-12">
+
+  <header class="sticky top-0 z-30 bg-white/85 backdrop-blur border-b border-slate-200">
+    <div class="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-8 h-8 rounded-xl bg-slate-900 text-white grid place-items-center shrink-0" id="logoIcon"></div>
+        <div class="min-w-0">
+          <div class="font-bold text-slate-900 leading-tight tracking-tight">Phrase Trainer</div>
+          <div class="text-[11px] text-slate-500 leading-tight truncate">英語フレーズ例文ジェネレーター</div>
+        </div>
+      </div>
+      <button id="engineBadge" data-a="tab" data-tab="settings" class="text-xs font-medium px-3 py-1.5 rounded-full border border-slate-200 bg-white text-slate-600 flex items-center gap-1.5 shrink-0"></button>
+    </div>
+    <nav class="hidden md:block border-t border-slate-100">
+      <div class="max-w-3xl mx-auto px-4 py-2 flex gap-1" id="navDesktop"></div>
+    </nav>
+  </header>
+
+  <main class="max-w-3xl mx-auto px-4 py-5" id="view"></main>
+</div>
+
+<nav class="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 safe-bottom">
+  <div class="grid grid-cols-4" id="navMobile"></div>
+</nav>
+
+<div id="toast" class="fixed left-1/2 -translate-x-1/2 bottom-24 md:bottom-8 z-50 px-4 py-2.5 rounded-full bg-slate-900 text-white text-sm shadow-lg opacity-0 pointer-events-none" style="transform:translate(-50%,8px)"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ================================================================
+     定数・マスターデータ
+  ================================================================ */
+  var CATS = [
+    { k: 'confirm',   l: '確認・聞き返し', dot: 'bg-sky-500',     chip: 'bg-sky-50 text-sky-700 border-sky-200' },
+    { k: 'ask',       l: '質問・情報収集', dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    { k: 'request',   l: '依頼・提案',     dot: 'bg-teal-500',    chip: 'bg-teal-50 text-teal-700 border-teal-200' },
+    { k: 'opinion',   l: '意見・判断',     dot: 'bg-amber-500',   chip: 'bg-amber-50 text-amber-700 border-amber-200' },
+    { k: 'consensus', l: '合意形成・議論', dot: 'bg-indigo-500',  chip: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+    { k: 'conclude',  l: '結論・まとめ',   dot: 'bg-violet-500',  chip: 'bg-violet-50 text-violet-700 border-violet-200' },
+    { k: 'feeling',   l: '気持ち・反応',   dot: 'bg-pink-500',    chip: 'bg-pink-50 text-pink-700 border-pink-200' },
+    { k: 'thanks',    l: '感謝・謝罪・反省', dot: 'bg-rose-500',  chip: 'bg-rose-50 text-rose-700 border-rose-200' },
+    { k: 'topic',     l: '話題転換・つなぎ', dot: 'bg-slate-500', chip: 'bg-slate-100 text-slate-700 border-slate-300' }
+  ];
+  var CAT = {}; CATS.forEach(function (c) { CAT[c.k] = c; });
+
+  var TYPES = {
+    opener:       '文頭の接続・副詞句（, ＋完全な文）',
+    stem_that:    '文を導く（＋主語＋動詞）',
+    stem_if:      'if / whether 節を導く',
+    stem_q:       '間接疑問を導く',
+    stem_vp_you:  '相手への依頼（＋動詞の原形）',
+    stem_vp_self: '意志・希望（＋動詞の原形）',
+    ing:          '＋名詞／動名詞(-ing)',
+    vp:           '動詞句',
+    closer:       '単独で使う表現・あいづち',
+    pattern:      '決まった構文（〜の部分を埋める）'
+  };
+
+  var ROLE_PROMPT = {
+    opener: 'Sentence-initial discourse marker / adverbial connector. Place it at the very beginning of a sentence (or at the start of a second sentence after a short context sentence), followed by a comma and a COMPLETE independent clause that has its own subject and finite verb. It is NOT a noun: never use it as a subject, object or complement (WRONG: "In conclusion is important." / RIGHT: "In conclusion, the plan worked.").',
+    stem_that: 'Sentence stem that must be followed directly by a complete finite clause (subject + verb). Never follow it with a bare noun or an infinitive.',
+    stem_if: 'Sentence stem ending in if/whether. It must be followed by a complete clause (subject + finite verb).',
+    stem_q: 'Stem followed by an embedded (indirect) question in statement word order (RIGHT: "where the station is" / WRONG: "where is the station").',
+    stem_vp_you: 'Request stem addressed to the listener. It must be followed by a bare-infinitive verb phrase (base form verb + object), e.g. "... send me the file".',
+    stem_vp_self: 'Stem expressing the speaker\'s intention or wish. It must be followed by a bare-infinitive verb phrase (base form verb + object).',
+    ing: 'Stem ending in a preposition or verb that takes a noun phrase or gerund (-ing form) after it. Never follow it with a bare verb or a clause.',
+    vp: 'A verb phrase. Conjugate it naturally for tense and person, but keep all of its core words together.',
+    pattern: 'A fixed construction. Follow the usage note exactly, fill any slots marked with 〜 using suitable words, and keep every fixed word of the phrase unchanged and together.',
+    closer: 'A standalone expression / reaction. Use it as a complete utterance on its own, typically as a reply in a short two-line dialogue or right after a context sentence. Do not force it into a subject position.'
+  };
+
+  var TONES = [
+    { k: 'casual',   l: 'カジュアル', d: 'casual and friendly, like talking with friends or close colleagues' },
+    { k: 'standard', l: 'ふつう',     d: 'neutral everyday English, natural in most situations' },
+    { k: 'formal',   l: 'フォーマル', d: 'polite and professional, suitable for business email, meetings and presentations' }
+  ];
+
+  var BUILTIN = [{"p": "I wonder", "ja": "〜かなと思う／〜だろうか", "c": "ask", "t": "stem_q", "u": "followed by if/whether or a wh- clause in statement word order", "ex": [{"en": "I wonder if it will rain tomorrow.", "ja": "明日は雨が降るかな。"}, {"en": "I wonder what she's planning for the weekend.", "ja": "彼女は週末に何を計画しているんだろう。"}, {"en": "I wonder why the train is so late today.", "ja": "今日はなぜ電車がこんなに遅れているんだろう。"}, {"en": "I wonder whether the client has read our proposal yet.", "ja": "クライアントはもう提案書を読んだだろうか。"}, {"en": "I wonder how long it takes to get to the airport from here.", "ja": "ここから空港までどのくらいかかるんだろう。"}]}, {"p": "Why don't you", "ja": "〜したらどう？（提案）", "c": "request", "t": "stem_vp_you", "u": "+ bare verb; a friendly suggestion that ends with a question mark", "ex": [{"en": "Why don't you take a day off tomorrow?", "ja": "明日は1日休んだらどう？"}, {"en": "Why don't you ask Ken? He knows a lot about cameras.", "ja": "ケンに聞いてみたら？カメラに詳しいよ。"}, {"en": "Why don't you join us for lunch?", "ja": "一緒にランチに行かない？"}, {"en": "Why don't you try the new app? It's really easy to use.", "ja": "新しいアプリを試してみたら？すごく使いやすいよ。"}, {"en": "Why don't you send the draft to the team first?", "ja": "まず下書きをチームに送ってみたらどう？"}]}, {"p": "I should have", "ja": "〜すべきだった（後悔）", "c": "thanks", "t": "pattern", "u": "+ past participle (e.g. I should have called); expresses regret about the past", "ex": [{"en": "I should have left home earlier.", "ja": "もっと早く家を出るべきだった。"}, {"en": "I should have checked the numbers before sending the report.", "ja": "レポートを送る前に数字を確認すべきだった。"}, {"en": "I should have listened to your advice.", "ja": "あなたの助言を聞いておけばよかった。"}, {"en": "I should have brought an umbrella today.", "ja": "今日は傘を持ってくればよかった。"}, {"en": "I should have booked the tickets last week.", "ja": "先週チケットを予約しておくべきだった。"}]}, {"p": "Could I get you to", "ja": "〜してもらえますか", "c": "request", "t": "stem_vp_you", "u": "+ bare verb; a polite request, ends with a question mark", "ex": [{"en": "Could I get you to sign this form?", "ja": "この書類にサインしてもらえますか？"}, {"en": "Could I get you to check these figures before the meeting?", "ja": "会議の前にこの数字を確認してもらえますか？"}, {"en": "Could I get you to send me the slides by Friday?", "ja": "金曜日までにスライドを送ってもらえますか？"}, {"en": "Could I get you to call the client back this afternoon?", "ja": "今日の午後、クライアントに折り返し電話してもらえますか？"}, {"en": "Could I get you to hold the door for a second?", "ja": "ちょっとドアを押さえておいてもらえますか？"}]}, {"p": "If it weren't for", "ja": "〜がなければ", "c": "thanks", "t": "pattern", "u": "If it weren't for + noun phrase, + main clause with would/could (present hypothetical)", "ex": [{"en": "If it weren't for your support, I couldn't keep going.", "ja": "あなたの支えがなければ、続けられないでしょう。"}, {"en": "If it weren't for the traffic, we would be there by now.", "ja": "渋滞がなければ、今ごろ着いているのに。"}, {"en": "If it weren't for my team, this project wouldn't be possible.", "ja": "チームがいなければ、このプロジェクトは実現できないでしょう。"}, {"en": "If it weren't for the rain, we could have a picnic today.", "ja": "雨がなければ、今日はピクニックができるのに。"}, {"en": "If it weren't for this app, I would forget all my appointments.", "ja": "このアプリがなければ、予定を全部忘れてしまうだろう。"}]}, {"p": "Do you want me to", "ja": "〜しましょうか？", "c": "request", "t": "stem_vp_self", "u": "offering to do something for the listener; + bare verb, ends with a question mark", "ex": [{"en": "Do you want me to pick you up at the station?", "ja": "駅まで迎えに行こうか？"}, {"en": "Do you want me to send you the file again?", "ja": "ファイルをもう一度送りましょうか？"}, {"en": "Do you want me to take notes during the meeting?", "ja": "会議中にメモを取りましょうか？"}, {"en": "Do you want me to call the restaurant and book a table?", "ja": "お店に電話して席を予約しようか？"}, {"en": "Do you want me to explain it one more time?", "ja": "もう一度説明しましょうか？"}]}, {"p": "Can I clarify", "ja": "確認させてもらえますか", "c": "confirm", "t": "pattern", "u": "+ noun or wh-clause, or 'Can I clarify something?'; asking permission to confirm a point", "ex": [{"en": "Can I clarify one thing before we move on?", "ja": "次に進む前に一点確認してもいいですか？"}, {"en": "Can I clarify what you mean by 'next phase'?", "ja": "「次のフェーズ」の意味を確認してもいいですか？"}, {"en": "Can I clarify the deadline? Is it Friday or Monday?", "ja": "締め切りを確認させてください。金曜ですか、月曜ですか？"}, {"en": "Can I clarify who is responsible for the budget?", "ja": "予算の担当者が誰か確認してもいいですか？"}, {"en": "Sorry, can I clarify something about the schedule?", "ja": "すみません、スケジュールについて確認してもいいですか？"}]}, {"p": "Can you clarify", "ja": "はっきりさせてもらえますか", "c": "confirm", "t": "pattern", "u": "+ noun or wh-clause; asking the listener to explain more clearly", "ex": [{"en": "Can you clarify what you mean by that?", "ja": "それはどういう意味か、はっきりさせてもらえますか？"}, {"en": "Can you clarify the main goal of this project?", "ja": "このプロジェクトの主な目標を明確にしてもらえますか？"}, {"en": "Can you clarify which version we should use?", "ja": "どのバージョンを使うべきか明確にしてもらえますか？"}, {"en": "Can you clarify the terms of the contract for me?", "ja": "契約条件について説明してもらえますか？"}, {"en": "Can you clarify when the new rules take effect?", "ja": "新しいルールがいつから適用されるか教えてもらえますか？"}]}, {"p": "Could I make a clarification?", "ja": "補足（訂正）させていただけますか", "c": "confirm", "t": "closer", "u": "a polite standalone question before correcting or adding detail", "ex": [{"en": "Could I make a clarification? The launch date is May 10th, not May 1st.", "ja": "補足させてください。発売日は5月1日ではなく5月10日です。"}, {"en": "Sorry, could I make a clarification? I meant the Tokyo office, not Osaka.", "ja": "すみません、補足させてください。大阪ではなく東京オフィスのことです。"}, {"en": "Before we continue, could I make a clarification?", "ja": "続ける前に、補足させていただけますか？"}, {"en": "Could I make a clarification? These figures don't include tax.", "ja": "補足させてください。この数字は税抜きです。"}, {"en": "A: So the budget is final?\nB: Could I make a clarification? It's still a draft.", "ja": "A: では予算は確定ですね？\nB: 補足させてください。まだ案の段階です。"}]}, {"p": "Can you repeat", "ja": "もう一度言ってもらえますか", "c": "confirm", "t": "pattern", "u": "+ that / the + noun / what-clause; a question", "ex": [{"en": "Sorry, can you repeat that?", "ja": "すみません、もう一度言ってもらえますか？"}, {"en": "Can you repeat the last part more slowly?", "ja": "最後の部分をもう少しゆっくり言ってもらえますか？"}, {"en": "Can you repeat the question, please?", "ja": "質問をもう一度言っていただけますか？"}, {"en": "Can you repeat your email address?", "ja": "メールアドレスをもう一度言ってもらえますか？"}, {"en": "The connection is bad. Can you repeat what you just said?", "ja": "回線が悪いです。今言ったことをもう一度お願いできますか？"}]}, {"p": "Can you elaborate", "ja": "詳しく説明してもらえますか", "c": "confirm", "t": "pattern", "u": "used alone, or + on + noun", "ex": [{"en": "Can you elaborate on that point?", "ja": "その点について詳しく説明してもらえますか？"}, {"en": "That's interesting. Can you elaborate?", "ja": "興味深いですね。詳しく聞かせてもらえますか？"}, {"en": "Can you elaborate on how the new system works?", "ja": "新しいシステムの仕組みを詳しく説明してもらえますか？"}, {"en": "Can you elaborate a little on the risks?", "ja": "リスクについてもう少し詳しく説明してもらえますか？"}, {"en": "Can you elaborate on your plan for next year?", "ja": "来年の計画について詳しく教えてもらえますか？"}]}, {"p": "Correct me if I'm wrong", "ja": "間違っていたら訂正してください", "c": "confirm", "t": "pattern", "u": "sentence opener, usually followed by ', but' + a complete clause", "ex": [{"en": "Correct me if I'm wrong, but the meeting starts at three, right?", "ja": "間違っていたら言ってください、会議は3時からですよね？"}, {"en": "Correct me if I'm wrong, but I think we agreed on a lower price.", "ja": "違っていたら訂正してほしいのですが、もっと安い価格で合意したと思います。"}, {"en": "Correct me if I'm wrong, but this data is from last year.", "ja": "間違っていたらすみません、このデータは昨年のものですよね。"}, {"en": "Correct me if I'm wrong, but you've been to Kyoto before, haven't you?", "ja": "違っていたらごめん、京都に行ったことあるよね？"}, {"en": "Correct me if I'm wrong, but the deadline was moved to Monday.", "ja": "間違っていたら訂正してください、締め切りは月曜に変更になったはずです。"}]}, {"p": "In conclusion", "ja": "結論として", "c": "conclude", "t": "opener", "u": "sentence-initial connector + comma + complete clause; never a noun", "ex": [{"en": "In conclusion, the new method is both faster and cheaper.", "ja": "結論として、新しい手法はより速く、より安価です。"}, {"en": "In conclusion, I'd like to thank everyone for their hard work.", "ja": "最後に、皆さんのご尽力に感謝申し上げます。"}, {"en": "In conclusion, our survey shows that customers want simpler products.", "ja": "結論として、調査から顧客はよりシンプルな製品を求めていることが分かります。"}, {"en": "In conclusion, we should focus on the Asian market next year.", "ja": "結論として、来年はアジア市場に注力すべきです。"}, {"en": "In conclusion, regular exercise clearly improves sleep quality.", "ja": "結論として、定期的な運動は明らかに睡眠の質を改善します。"}]}, {"p": "I have 3 points", "ja": "3点あります", "c": "conclude", "t": "pattern", "u": "announces three points in a talk; keep the digit 3", "ex": [{"en": "I have 3 points I'd like to make today.", "ja": "今日は3点お話ししたいと思います。"}, {"en": "I have 3 points to share. First, our sales are up.", "ja": "3点共有します。まず、売上が伸びています。"}, {"en": "Regarding this proposal, I have 3 points.", "ja": "この提案について、3点あります。"}, {"en": "I have 3 points, so I'll keep it brief.", "ja": "3点ありますので、手短にお話しします。"}, {"en": "I have 3 points about the schedule, the budget and the staff.", "ja": "スケジュール、予算、人員について3点あります。"}]}, {"p": "Let me summarize", "ja": "まとめさせてください", "c": "conclude", "t": "pattern", "u": "used alone, or + noun / what-clause", "ex": [{"en": "Let me summarize what we've discussed so far.", "ja": "ここまでの議論をまとめさせてください。"}, {"en": "Let me summarize the key points before we finish.", "ja": "終わる前に要点をまとめさせてください。"}, {"en": "Okay, let me summarize. We'll launch in May with a smaller budget.", "ja": "では、まとめます。予算を抑えて5月にローンチします。"}, {"en": "Let me summarize the results of the survey.", "ja": "調査結果をまとめさせてください。"}, {"en": "Let me summarize the main differences between the two plans.", "ja": "2つのプランの主な違いをまとめさせてください。"}]}, {"p": "Could I ask a basic question?", "ja": "基本的な質問をしてもいいですか", "c": "ask", "t": "closer", "u": "a polite standalone question, usually followed by the actual question", "ex": [{"en": "Could I ask a basic question? What does KPI stand for?", "ja": "基本的な質問をしてもいいですか？KPIは何の略ですか？"}, {"en": "Sorry, could I ask a basic question about the process?", "ja": "すみません、手順について基本的な質問をしてもいいですか？"}, {"en": "Before we go further, could I ask a basic question?", "ja": "先に進む前に、基本的な質問をしてもいいですか？"}, {"en": "Could I ask a basic question? Who is our main customer?", "ja": "基本的な質問をしてもいいですか？主な顧客は誰ですか？"}, {"en": "I'm new to this field. Could I ask a basic question?", "ja": "この分野は初めてなのですが、基本的な質問をしてもいいですか？"}]}, {"p": "Maybe this is a stupid question, but", "ja": "馬鹿な質問かもしれませんが", "c": "ask", "t": "pattern", "u": "humble opener followed directly by the actual question", "ex": [{"en": "Maybe this is a stupid question, but why do we need two servers?", "ja": "馬鹿な質問かもしれませんが、なぜサーバーが2台必要なのですか？"}, {"en": "Maybe this is a stupid question, but what does 'ROI' mean?", "ja": "くだらない質問かもしれませんが、「ROI」とはどういう意味ですか？"}, {"en": "Maybe this is a stupid question, but is the office open on Saturdays?", "ja": "馬鹿な質問かもしれませんが、オフィスは土曜日も開いていますか？"}, {"en": "Maybe this is a stupid question, but how do I turn this on?", "ja": "初歩的な質問かもしれませんが、これはどうやって電源を入れるんですか？"}, {"en": "Maybe this is a stupid question, but can we just ask the customer?", "ja": "馬鹿な質問かもしれませんが、顧客に直接聞けばいいのでは？"}]}, {"p": "Could you educate me", "ja": "〜について教えていただけますか", "c": "ask", "t": "pattern", "u": "used alone, or + on + noun / how-clause; a humble request to learn", "ex": [{"en": "Could you educate me on how this tool works?", "ja": "このツールの仕組みを教えていただけますか？"}, {"en": "Could you educate me on the basics of investing?", "ja": "投資の基本を教えていただけますか？"}, {"en": "I'm not familiar with this market. Could you educate me?", "ja": "この市場には詳しくないので、教えていただけますか？"}, {"en": "Could you educate me on the history of this project?", "ja": "このプロジェクトの経緯を教えていただけますか？"}, {"en": "Could you educate me on the difference between these two models?", "ja": "この2つのモデルの違いを教えていただけますか？"}]}, {"p": "I've got to", "ja": "〜しなきゃ", "c": "topic", "t": "stem_vp_self", "u": "+ bare verb; casual 'have to'", "ex": [{"en": "I've got to go. See you tomorrow!", "ja": "もう行かなきゃ。また明日！"}, {"en": "I've got to finish this report by noon.", "ja": "昼までにこのレポートを終わらせなきゃ。"}, {"en": "I've got to admit, your idea is better than mine.", "ja": "正直、君のアイデアの方が僕のより良いと認めざるを得ないね。"}, {"en": "I've got to pick up my kids at five.", "ja": "5時に子どもを迎えに行かなきゃ。"}, {"en": "I've got to remember to call my mom tonight.", "ja": "今夜お母さんに電話するのを忘れないようにしなきゃ。"}]}, {"p": "Next time I do", "ja": "次に〜するときは", "c": "thanks", "t": "pattern", "u": "'Next time I do + object, + main clause (usually I'll ...)'", "ex": [{"en": "Next time I do this, I'll ask for help earlier.", "ja": "次にこれをやるときは、もっと早く助けを求めるよ。"}, {"en": "Next time I do a presentation, I'll practice more.", "ja": "次にプレゼンをするときは、もっと練習します。"}, {"en": "Next time I do the shopping, I'll make a list first.", "ja": "次に買い物をするときは、先にリストを作ろう。"}, {"en": "Next time I do business in Tokyo, let's have dinner.", "ja": "次に東京で仕事をするときは、夕食に行きましょう。"}, {"en": "Next time I do the report, I'll double-check the data.", "ja": "次にレポートを作るときは、データを二重チェックします。"}]}, {"p": "Be careful 〜ing", "ja": "〜するときは気をつけて", "c": "request", "t": "pattern", "u": "Be careful + -ing verb (e.g. Be careful crossing the street)", "ex": [{"en": "Be careful crossing the street.", "ja": "道を渡るときは気をつけてね。"}, {"en": "Be careful driving in the snow.", "ja": "雪の中を運転するときは気をつけて。"}, {"en": "Be careful using that knife. It's really sharp.", "ja": "そのナイフを使うときは気をつけて。すごく切れるよ。"}, {"en": "Be careful walking on the ice.", "ja": "氷の上を歩くときは注意してね。"}, {"en": "Be careful carrying those boxes down the stairs.", "ja": "その箱を持って階段を下りるときは気をつけて。"}]}, {"p": "The more I 〜, the more I 〜", "ja": "〜すればするほど、ますます〜", "c": "opinion", "t": "pattern", "u": "The more I + verb, the more I + verb (comparative correlative)", "ex": [{"en": "The more I practice, the more I enjoy playing the piano.", "ja": "練習すればするほど、ピアノを弾くのが楽しくなる。"}, {"en": "The more I learn about history, the more I want to travel.", "ja": "歴史を学べば学ぶほど、旅行したくなる。"}, {"en": "The more I think about it, the more I like the idea.", "ja": "考えれば考えるほど、そのアイデアが好きになる。"}, {"en": "The more I read, the more I realize how little I know.", "ja": "読めば読むほど、自分がいかに無知か気づかされる。"}, {"en": "The more I work with her, the more I respect her.", "ja": "彼女と働けば働くほど、尊敬の念が強くなる。"}]}, {"p": "I'll let you know if", "ja": "もし〜なら知らせます", "c": "consensus", "t": "stem_if", "u": "+ complete clause describing a possible event", "ex": [{"en": "I'll let you know if anything changes.", "ja": "何か変わったらお知らせします。"}, {"en": "I'll let you know if I need any help.", "ja": "手伝いが必要なら知らせるね。"}, {"en": "I'll let you know if the client replies today.", "ja": "今日クライアントから返事があればお知らせします。"}, {"en": "I'll let you know if I can make it to the party.", "ja": "パーティーに行けるかどうか連絡するね。"}, {"en": "I'll let you know if there are any problems with the order.", "ja": "注文に問題があればご連絡します。"}]}, {"p": "Kind of", "ja": "ちょっと・なんとなく", "c": "opinion", "t": "pattern", "u": "informal hedge before an adjective or verb (It's kind of cold), or a one-word reply; NOT 'a kind of' meaning a type", "ex": [{"en": "It's kind of cold today, isn't it?", "ja": "今日はちょっと寒いよね。"}, {"en": "I'm kind of tired, so I'll stay home tonight.", "ja": "なんだか疲れてるから、今夜は家にいるよ。"}, {"en": "The movie was kind of boring, to be honest.", "ja": "正直、その映画はちょっと退屈だった。"}, {"en": "I kind of like the old design better.", "ja": "前のデザインの方がなんとなく好きかな。"}, {"en": "A: Are you busy?\nB: Kind of. What's up?", "ja": "A: 忙しい？\nB: まあね。どうしたの？"}]}, {"p": "What 〜 for?", "ja": "何のために〜？", "c": "ask", "t": "pattern", "u": "What + auxiliary + subject + verb + for? (asks about purpose)", "ex": [{"en": "What did you do that for?", "ja": "何のためにそんなことをしたの？"}, {"en": "What is this button for?", "ja": "このボタンは何のためのもの？"}, {"en": "What do you need the money for?", "ja": "そのお金は何に使うの？"}, {"en": "What are you saving up for?", "ja": "何のために貯金してるの？"}, {"en": "What did he call you for?", "ja": "彼は何の用で電話してきたの？"}]}, {"p": "I'm not a fan of", "ja": "〜はあまり好きじゃない", "c": "opinion", "t": "ing", "u": "+ noun or -ing; a soft way to say you don't like something", "ex": [{"en": "I'm not a fan of spicy food.", "ja": "辛い食べ物はあまり得意じゃない。"}, {"en": "I'm not a fan of long meetings.", "ja": "長い会議はあまり好きではありません。"}, {"en": "To be honest, I'm not a fan of this color.", "ja": "正直、この色はあまり好みじゃないな。"}, {"en": "I'm not a fan of working late, but it's necessary this week.", "ja": "残業は好きじゃないけど、今週は仕方ない。"}, {"en": "I'm not a fan of horror movies, so let's watch a comedy.", "ja": "ホラー映画は苦手だから、コメディを観ようよ。"}]}, {"p": "Do you have any idea", "ja": "〜って分かりますか？", "c": "ask", "t": "stem_q", "u": "+ wh-clause or if-clause in statement word order; ends with a question mark", "ex": [{"en": "Do you have any idea where my keys are?", "ja": "私の鍵がどこにあるか分かる？"}, {"en": "Do you have any idea how much this costs?", "ja": "これがいくらするか分かりますか？"}, {"en": "Do you have any idea what time it is?", "ja": "今何時か分かってる？"}, {"en": "Do you have any idea why the server went down?", "ja": "なぜサーバーが落ちたか心当たりはありますか？"}, {"en": "Do you have any idea if the store is open on Sunday?", "ja": "お店が日曜に開いているか分かりますか？"}]}, {"p": "Let's say", "ja": "例えば〜としましょう", "c": "consensus", "t": "stem_that", "u": "+ hypothetical complete clause (Let's say we launch in May)", "ex": [{"en": "Let's say we launch the product in May. What happens then?", "ja": "仮に5月に製品を発売するとしましょう。そうするとどうなりますか？"}, {"en": "Let's say you have ten thousand yen. What would you buy?", "ja": "例えば1万円持っているとしたら、何を買う？"}, {"en": "Let's say the meeting takes two hours. We'll finish at five.", "ja": "会議が2時間かかるとしましょう。5時に終わります。"}, {"en": "Let's say we cut the budget by ten percent.", "ja": "仮に予算を10%削減するとしましょう。"}, {"en": "Let's say it rains tomorrow. Do we have a backup plan?", "ja": "明日雨が降ったとしましょう。代わりの計画はありますか？"}]}, {"p": "How does that sound?", "ja": "それでどうですか？（提案への反応を聞く）", "c": "consensus", "t": "closer", "u": "asked right after making a suggestion", "ex": [{"en": "Let's meet at the station at six. How does that sound?", "ja": "6時に駅で待ち合わせよう。どうかな？"}, {"en": "We could start the project next Monday. How does that sound?", "ja": "来週の月曜からプロジェクトを始められます。いかがですか？"}, {"en": "How does that sound to you?", "ja": "それについてどう思いますか？"}, {"en": "I'll send the draft tonight, and you can review it tomorrow. How does that sound?", "ja": "今夜下書きを送るので、明日確認してください。それでどうですか？"}, {"en": "A: Pizza and a movie tonight? How does that sound?\nB: Sounds perfect!", "ja": "A: 今夜はピザと映画はどう？どうかな？\nB: 最高だね！"}]}, {"p": "I just wanted to say", "ja": "ひと言伝えたくて", "c": "thanks", "t": "stem_that", "u": "+ thank you / sorry / congratulations, or + (that) clause", "ex": [{"en": "I just wanted to say thank you for yesterday.", "ja": "昨日のお礼をひと言伝えたくて。"}, {"en": "I just wanted to say that you did a great job.", "ja": "素晴らしい仕事だったと伝えたかったんです。"}, {"en": "I just wanted to say I'm sorry about the mistake.", "ja": "ミスについて謝りたかったんです。"}, {"en": "I just wanted to say congratulations on your promotion.", "ja": "昇進おめでとうと言いたくて。"}, {"en": "I just wanted to say how much I enjoyed working with you.", "ja": "一緒に働けて本当に楽しかったと伝えたかったんです。"}]}, {"p": "I'm looking forward to", "ja": "〜を楽しみにしています", "c": "feeling", "t": "ing", "u": "+ noun or -ing (never a bare verb)", "ex": [{"en": "I'm looking forward to meeting you next week.", "ja": "来週お会いできるのを楽しみにしています。"}, {"en": "I'm looking forward to hearing from you.", "ja": "ご連絡をお待ちしております。"}, {"en": "I'm looking forward to the summer vacation.", "ja": "夏休みが楽しみです。"}, {"en": "I'm looking forward to working with your team.", "ja": "御社のチームとお仕事できるのを楽しみにしています。"}, {"en": "I'm looking forward to seeing the results of the test.", "ja": "テストの結果を見るのが楽しみです。"}]}, {"p": "I'd rather not", "ja": "できれば〜したくない", "c": "opinion", "t": "stem_vp_self", "u": "+ bare verb, or used alone as a polite refusal", "ex": [{"en": "I'd rather not talk about it right now.", "ja": "今はその話はしたくないな。"}, {"en": "I'd rather not drive at night.", "ja": "できれば夜は運転したくない。"}, {"en": "Thanks, but I'd rather not.", "ja": "ありがとう、でも遠慮しておくよ。"}, {"en": "I'd rather not change the plan at this stage.", "ja": "この段階で計画を変えるのはできれば避けたいです。"}, {"en": "I'd rather not eat too late, so let's have dinner at six.", "ja": "あまり遅くに食べたくないから、6時に夕食にしよう。"}]}, {"p": "I'm pleased with", "ja": "〜に満足しています", "c": "feeling", "t": "ing", "u": "+ noun or how-clause", "ex": [{"en": "I'm pleased with the results of the test.", "ja": "テストの結果に満足しています。"}, {"en": "I'm pleased with how the event turned out.", "ja": "イベントの結果に満足しています。"}, {"en": "I'm pleased with your progress this month.", "ja": "今月のあなたの成長ぶりに満足しています。"}, {"en": "I'm pleased with my new laptop. It's so fast.", "ja": "新しいノートPCに満足してる。すごく速いんだ。"}, {"en": "Overall, I'm pleased with the new design.", "ja": "全体として、新しいデザインに満足しています。"}]}, {"p": "I didn't mean to", "ja": "〜するつもりじゃなかった", "c": "thanks", "t": "stem_vp_self", "u": "+ bare verb; apologizing for something unintended", "ex": [{"en": "I didn't mean to hurt your feelings.", "ja": "傷つけるつもりはなかったんだ。"}, {"en": "Sorry, I didn't mean to interrupt you.", "ja": "ごめんなさい、話を遮るつもりはありませんでした。"}, {"en": "I didn't mean to be rude.", "ja": "失礼なことをするつもりはなかったんです。"}, {"en": "I didn't mean to delete the file. It was an accident.", "ja": "ファイルを消すつもりじゃなかったんだ。うっかりだよ。"}, {"en": "I didn't mean to keep you waiting so long.", "ja": "そんなに長くお待たせするつもりはありませんでした。"}]}, {"p": "I'm so excited", "ja": "すごくワクワクしている", "c": "feeling", "t": "pattern", "u": "used alone, or + about + noun/-ing, or + to + verb", "ex": [{"en": "I'm so excited about the trip to Hawaii!", "ja": "ハワイ旅行がすごく楽しみ！"}, {"en": "I'm so excited to see you tomorrow.", "ja": "明日会えるのがすごく楽しみ。"}, {"en": "I'm so excited! I finally got the job.", "ja": "すごく嬉しい！ついに仕事が決まったんだ。"}, {"en": "I'm so excited about the new project.", "ja": "新しいプロジェクトにワクワクしています。"}, {"en": "I'm so excited to start my new job next week.", "ja": "来週から新しい仕事が始まるのがすごく楽しみ。"}]}, {"p": "Would you happen to", "ja": "ひょっとして〜ですか？", "c": "ask", "t": "stem_vp_you", "u": "+ bare verb (usually know / have / remember); a very polite question", "ex": [{"en": "Would you happen to know where the post office is?", "ja": "ひょっとして郵便局がどこかご存じですか？"}, {"en": "Would you happen to have a pen I could borrow?", "ja": "もしかしてペンをお持ちではないですか？お借りしたいのですが。"}, {"en": "Would you happen to know when the next bus comes?", "ja": "次のバスがいつ来るかご存じですか？"}, {"en": "Would you happen to have a charger for this phone?", "ja": "もしかしてこの携帯の充電器をお持ちですか？"}, {"en": "Would you happen to remember the name of that restaurant?", "ja": "あのレストランの名前を覚えていらっしゃいますか？"}]}, {"p": "Based on my experience", "ja": "私の経験から言うと", "c": "opinion", "t": "opener", "u": "sentence-initial phrase + comma + complete clause", "ex": [{"en": "Based on my experience, customers prefer simple designs.", "ja": "私の経験から言うと、顧客はシンプルなデザインを好みます。"}, {"en": "Based on my experience, it's better to start early.", "ja": "経験上、早めに始める方がいいです。"}, {"en": "Based on my experience, this kind of project takes about three months.", "ja": "私の経験では、この種のプロジェクトは3か月ほどかかります。"}, {"en": "Based on my experience, the morning train is less crowded after 8:30.", "ja": "経験上、朝の電車は8時半を過ぎると空いてきます。"}, {"en": "Based on my experience, small teams make decisions faster.", "ja": "私の経験では、少人数のチームの方が意思決定が速いです。"}]}, {"p": "What's the difference between", "ja": "〜と〜の違いは何ですか", "c": "ask", "t": "pattern", "u": "+ A and B; ends with a question mark", "ex": [{"en": "What's the difference between 'affect' and 'effect'?", "ja": "「affect」と「effect」の違いは何ですか？"}, {"en": "What's the difference between these two plans?", "ja": "この2つのプランの違いは何ですか？"}, {"en": "What's the difference between a latte and a cappuccino?", "ja": "ラテとカプチーノの違いは何？"}, {"en": "What's the difference between the old model and the new one?", "ja": "旧モデルと新モデルの違いは何ですか？"}, {"en": "What's the difference between renting and buying in the long run?", "ja": "長い目で見て、賃貸と購入の違いは何ですか？"}]}, {"p": "Speaking of", "ja": "〜と言えば", "c": "topic", "t": "pattern", "u": "Speaking of + a noun just mentioned, + a new clause; also 'Speaking of which,'", "ex": [{"en": "Speaking of food, have you tried the new ramen shop?", "ja": "食べ物と言えば、新しいラーメン屋に行ってみた？"}, {"en": "Speaking of Kyoto, my sister is moving there next month.", "ja": "京都と言えば、妹が来月そこに引っ越すんだ。"}, {"en": "Speaking of the budget, we need to talk about next year.", "ja": "予算と言えば、来年のことを話し合う必要があります。"}, {"en": "Speaking of which, did you finish the report?", "ja": "そういえば、レポートは終わった？"}, {"en": "Speaking of travel, where are you going this summer?", "ja": "旅行と言えば、この夏はどこに行くの？"}]}, {"p": "Whether 〜 or not", "ja": "〜かどうか／〜であろうとなかろうと", "c": "opinion", "t": "pattern", "u": "whether + clause + or not; as an embedded question or as an adverbial clause", "ex": [{"en": "I'm not sure whether he's coming or not.", "ja": "彼が来るかどうか分からない。"}, {"en": "Whether you like it or not, we have to finish this today.", "ja": "好むと好まざるとにかかわらず、今日中にこれを終わらせないといけない。"}, {"en": "Let me know whether you can join us or not.", "ja": "参加できるかどうか教えてね。"}, {"en": "Whether it rains or not, the event will go ahead.", "ja": "雨が降っても降らなくても、イベントは開催されます。"}, {"en": "It doesn't matter whether we win or not. Just have fun.", "ja": "勝っても負けても関係ない。楽しもう。"}]}, {"p": "No wonder", "ja": "どうりで〜なわけだ", "c": "feeling", "t": "stem_that", "u": "+ complete clause, or used alone as a reaction", "ex": [{"en": "No wonder you're tired. You worked until midnight.", "ja": "どうりで疲れてるわけだ。夜中まで働いてたんだから。"}, {"en": "A: The shop was closed today.\nB: No wonder it was so quiet.", "ja": "A: 今日はお店が休みだったんだ。\nB: どうりで静かだったわけだ。"}, {"en": "No wonder the room is cold. The window is open.", "ja": "どうりで部屋が寒いわけだ。窓が開いてる。"}, {"en": "He lived in London for ten years? No wonder his English is so good.", "ja": "彼はロンドンに10年住んでたの？どうりで英語が上手なわけだ。"}, {"en": "No wonder sales went up. The new ad was a big hit.", "ja": "どうりで売上が伸びたわけだ。新しい広告が大ヒットしたんだ。"}]}, {"p": "What's the matter with", "ja": "〜はどうしたの？", "c": "ask", "t": "pattern", "u": "+ noun or pronoun; asks what is wrong", "ex": [{"en": "What's the matter with you today? You look upset.", "ja": "今日はどうしたの？機嫌が悪そうだね。"}, {"en": "What's the matter with the printer?", "ja": "プリンターはどうしたの？"}, {"en": "What's the matter with this app? It keeps crashing.", "ja": "このアプリどうしたんだろう？落ちてばかりいる。"}, {"en": "What's the matter with Tom? He hasn't said a word all day.", "ja": "トムはどうしたの？一日中ひと言も話してないよ。"}, {"en": "What's the matter with the car? It's making a strange noise.", "ja": "車どうしたの？変な音がしてるよ。"}]}, {"p": "I can't wait to", "ja": "〜するのが待ちきれない", "c": "feeling", "t": "stem_vp_self", "u": "+ bare verb", "ex": [{"en": "I can't wait to see you again!", "ja": "また会えるのが待ちきれない！"}, {"en": "I can't wait to try the new restaurant.", "ja": "新しいレストランに行くのが待ちきれない。"}, {"en": "I can't wait to hear what you think.", "ja": "あなたの感想を聞くのが楽しみです。"}, {"en": "I can't wait to start working with the new team.", "ja": "新しいチームと仕事を始めるのが待ち遠しいです。"}, {"en": "I can't wait to get home and relax.", "ja": "早く家に帰ってのんびりしたい。"}]}, {"p": "Would it be OK if I", "ja": "〜してもよろしいですか", "c": "request", "t": "pattern", "u": "+ past-tense verb (Would it be OK if I left early?); a polite request for permission", "ex": [{"en": "Would it be OK if I left a little early today?", "ja": "今日は少し早めに帰ってもよろしいですか？"}, {"en": "Would it be OK if I opened the window?", "ja": "窓を開けてもいいですか？"}, {"en": "Would it be OK if I brought a friend to the party?", "ja": "パーティーに友達を連れて行ってもいいですか？"}, {"en": "Would it be OK if I called you tomorrow morning?", "ja": "明日の朝お電話してもよろしいですか？"}, {"en": "Would it be OK if I used your charger for a minute?", "ja": "少しだけ充電器を使わせてもらってもいい？"}]}, {"p": "I'm not sure (about / if / wh-)", "ja": "〜はよく分からない", "c": "opinion", "t": "pattern", "u": "I'm not sure + about + noun, + if/whether clause, or + wh-clause in statement order", "ex": [{"en": "I'm not sure about the new schedule.", "ja": "新しいスケジュールについてはよく分かりません。"}, {"en": "I'm not sure if I can make it tonight.", "ja": "今夜行けるかどうか分からない。"}, {"en": "I'm not sure what you mean.", "ja": "おっしゃっている意味がよく分かりません。"}, {"en": "I'm not sure where I left my phone.", "ja": "携帯をどこに置いたか分からない。"}, {"en": "I'm not sure whether this is the right approach.", "ja": "これが正しいやり方かどうか確信がありません。"}]}, {"p": "You might want to", "ja": "〜した方がいいかもしれません", "c": "request", "t": "stem_vp_you", "u": "+ bare verb; a gentle piece of advice", "ex": [{"en": "You might want to bring an umbrella. It looks like rain.", "ja": "傘を持っていった方がいいかも。雨が降りそうだよ。"}, {"en": "You might want to check the numbers again.", "ja": "数字をもう一度確認した方がいいかもしれません。"}, {"en": "You might want to call ahead before you visit.", "ja": "訪問する前に電話しておいた方がいいかもしれません。"}, {"en": "You might want to save your work before restarting.", "ja": "再起動する前に作業を保存した方がいいですよ。"}, {"en": "You might want to talk to your manager about it.", "ja": "その件は上司に相談した方がいいかもしれません。"}]}, {"p": "Let's address", "ja": "〜に取り組みましょう", "c": "consensus", "t": "pattern", "u": "+ noun (an issue, question or concern); 'address' means deal with, NOT a postal address", "ex": [{"en": "Let's address the budget issue first.", "ja": "まず予算の問題に取り組みましょう。"}, {"en": "Let's address your questions at the end of the meeting.", "ja": "ご質問には会議の最後にお答えしましょう。"}, {"en": "Let's address the customer complaints this week.", "ja": "今週中に顧客の苦情に対応しましょう。"}, {"en": "Let's address the biggest risks before we launch.", "ja": "ローンチ前に最大のリスクに対処しましょう。"}, {"en": "Let's address this problem together.", "ja": "この問題に一緒に取り組みましょう。"}]}].map(function (r, i) { r.id = 'b' + i; r.src = 'builtin'; return r; });
+
+  /* ---------- 内蔵エンジン用の文法パーツ（英語＋日本語ヒント） ---------- */
+  var BANK = {
+    clause: {
+      daily: [
+        ["I'm going to grab a coffee before work", '仕事の前にコーヒーを買っていく'],
+        ['the weather is perfect for a walk today', '今日は散歩にぴったりの天気だ'],
+        ['we should try that new ramen place downtown', '街中の新しいラーメン屋に行ってみよう'],
+        ['I finally finished cleaning my room', 'やっと部屋の掃除が終わった'],
+        ['the train was packed this morning', '今朝の電車は満員だった'],
+        ["I'll be home a little late tonight", '今夜は少し帰りが遅くなる']
+      ],
+      business: [
+        ['we need to push the deadline back a week', '締め切りを1週間延ばす必要がある'],
+        ['the client approved the new proposal', 'クライアントが新しい提案を承認した'],
+        ['our sales improved significantly this quarter', '今四半期は売上が大きく伸びた'],
+        ['the meeting has been moved to Thursday', '会議は木曜日に変更になった'],
+        ['we should prioritize the product launch', '製品ローンチを優先すべきだ'],
+        ['the budget needs another review', '予算はもう一度見直しが必要だ']
+      ],
+      academic: [
+        ['the data clearly supports our hypothesis', 'データは仮説を明確に裏付けている'],
+        ['further research is needed in this area', 'この分野ではさらなる研究が必要だ'],
+        ['the new method reduced costs by twenty percent', '新しい手法でコストが20%削減された'],
+        ['these results have important practical implications', 'これらの結果は重要な実務的示唆を持つ'],
+        ['the survey reveals a clear shift in consumer behavior', '調査は消費者行動の明確な変化を示している'],
+        ['our findings are consistent with previous studies', '本研究の結果は先行研究と一致している']
+      ],
+      opinion: [
+        ['this was the best decision we could have made', 'これは私たちにできた最善の決断だった'],
+        ['the plan might actually work', 'その計画は実際にうまくいくかもしれない'],
+        ["we're heading in the right direction", '私たちは正しい方向に進んでいる'],
+        ['the movie was a little too long', 'その映画は少し長すぎた'],
+        ['remote work suits our team well', 'リモートワークは私たちのチームに合っている'],
+        ['we should give it another try', 'もう一度挑戦すべきだ']
+      ]
+    },
+    ifClause: [
+      ['you could help me with this', 'これを手伝っていただけるか'],
+      ["you're free this weekend", '今週末は空いているか'],
+      ['we could reschedule the meeting', '会議の日程を変更できるか'],
+      ['you had a chance to read my email', 'メールを読んでいただけたか'],
+      ["there's anything I can do to help", '何かお手伝いできることがあるか'],
+      ['the store is still open', 'お店がまだ開いているか']
+    ],
+    embeddedQ: [
+      ['where the nearest station is', '最寄り駅がどこか'],
+      ['what time the meeting starts', '会議が何時に始まるか'],
+      ['who is in charge of this project', 'このプロジェクトの担当者は誰か'],
+      ['how long it takes to get there', 'そこまでどのくらいかかるか'],
+      ['why the shipment was delayed', 'なぜ出荷が遅れたのか'],
+      ['when the new schedule will be ready', '新しいスケジュールがいつできるか']
+    ],
+    vpYou: [
+      ['send me the updated file', '最新のファイルを送る'],
+      ['take a look at this draft', 'この下書きに目を通す'],
+      ["call me back when you're free", '手が空いたら折り返し電話する'],
+      ['help me with the presentation', 'プレゼンを手伝う'],
+      ['explain the process once more', '手順をもう一度説明する'],
+      ['share your thoughts on this proposal', 'この提案について意見を聞かせる'],
+      ['check the schedule for next week', '来週の予定を確認する']
+    ],
+    vpSelf: [
+      ['confirm the details of our meeting', '打ち合わせの詳細を確認する'],
+      ['go over the main points again', '要点をもう一度おさらいする'],
+      ['book a table for four', '4人分の席を予約する'],
+      ['take a few days off next month', '来月数日休みを取る'],
+      ['learn more about your company', '御社についてもっと知る'],
+      ['reschedule the meeting to Friday', '会議を金曜日に変更する'],
+      ['ask about the delivery schedule', '配送スケジュールについて尋ねる']
+    ],
+    ing: {
+      thanks: [
+        ['your help', 'ご協力'], ['your quick response', '迅速なご対応'], ['your patience', 'お待ちいただいたこと'],
+        ['the thoughtful gift', '心のこもった贈り物'], ['all your support this year', '今年一年のご支援'], ['the warm welcome', '温かい歓迎']
+      ],
+      sorry: [
+        ['the late reply', '返信が遅れたこと'], ['being late', '遅れたこと'], ['the confusion', '混乱を招いたこと'],
+        ['keeping you waiting', 'お待たせしたこと'], ['the short notice', '急な連絡'], ['the inconvenience', 'ご不便をおかけしたこと']
+      ],
+      future: [
+        ['meeting you in person', '直接お会いすること'], ['hearing from you', 'お返事'], ['working with your team', '御社チームとのお仕事'],
+        ['our next meeting', '次回の打ち合わせ'], ['seeing the final results', '最終結果を見ること']
+      ],
+      request: [
+        ['sending me the details', '詳細を送ること'], ['closing the window', '窓を閉めること'], ['speaking a little more slowly', 'もう少しゆっくり話すこと'],
+        ['waiting a few more minutes', 'もう数分待つこと'], ['checking this report', 'このレポートを確認すること']
+      ],
+      general: [
+        ['trying the new cafe', '新しいカフェに行ってみること'], ['taking a short break', '少し休憩すること'], ['starting the project next month', '来月プロジェクトを始めること'],
+        ['learning a new language', '新しい言語を学ぶこと'], ['moving to a bigger office', 'もっと広いオフィスへの移転'], ['the new design', '新しいデザイン']
+      ]
+    },
+    when: [['this weekend', '今週末'], ['after lunch', '昼食の後で'], ['tomorrow morning', '明日の朝'], ['before the meeting', '会議の前に'], ['sometime next week', '来週のどこかで']],
+    vpTpl: [
+      ["Let's {vp} {t}.", '提案'], ["I'm going to {vp} {t}.", '予定'], ['We really need to {vp} {t}.', '必要性'],
+      ['Do you want to {vp} {t}?', '誘い'], ["I'll try to {vp} {t}.", '意志']
+    ],
+    replyTo: {
+      agree: [
+        ['How about meeting at the station at six?', '6時に駅で会うのはどう？'],
+        ['I think we should start with the smaller project.', '小さいプロジェクトから始めるべきだと思う。'],
+        ["Let's split the work between the two teams.", '作業を2チームで分担しよう。'],
+        ['We could launch the campaign next month.', '来月キャンペーンを始められそうだね。'],
+        ['Maybe we should take the train instead of driving.', '車じゃなくて電車で行った方がいいかも。']
+      ],
+      reassure: [
+        ["Sorry, I'm running a few minutes late.", 'ごめん、数分遅れそう。'],
+        ["I'm so sorry I forgot to call you back.", '折り返し電話するのを忘れてごめん。'],
+        ['Sorry, I spilled some coffee on your desk.', 'ごめん、机にコーヒーをこぼしちゃった。'],
+        ["I'm afraid I can't make it to dinner tonight.", '今夜の夕食には行けそうにないんだ。'],
+        ['Oops, I sent you the wrong link.', 'あ、間違ったリンクを送っちゃった。']
+      ],
+      apology: [
+        ['The file you sent was the old version.', '送ってもらったファイル、古い版でした。'],
+        ["We've been waiting for twenty minutes.", 'もう20分も待っているのですが。'],
+        ['The invoice still has the wrong address.', '請求書の住所がまだ間違っています。'],
+        ['You forgot to cc me on the email.', 'メールのCCに私が入っていませんでした。'],
+        ["This isn't what I ordered.", 'これは注文したものと違います。']
+      ],
+      gratitude: [
+        ["I covered your shift yesterday, so don't worry.", '昨日のシフト代わっておいたから心配しないで。'],
+        ['Here, I saved you a seat.', 'はい、席取っておいたよ。'],
+        ['I fixed the bug you were stuck on.', '行き詰まってたバグ、直しておいたよ。'],
+        ["I'll give you a ride to the airport.", '空港まで車で送るよ。'],
+        ['I picked up your package from the front desk.', '受付で荷物を受け取っておいたよ。']
+      ],
+      promise: [
+        ['Can you confirm the final price?', '最終価格を確認していただけますか？'],
+        ['Do you know if the room is available on Friday?', '金曜日に部屋が空いているか分かりますか？'],
+        ['Could you check with your manager?', '上司の方に確認していただけますか？'],
+        ['When can you send the estimate?', '見積もりはいつ送っていただけますか？'],
+        ['Is the new schedule ready yet?', '新しいスケジュールはもうできましたか？']
+      ]
+    }
+  };
+
+  var OPENERS = ['in conclusion','to be honest','by the way','as a result','however','therefore','in addition','moreover','furthermore','first of all','in my opinion','to sum up','on the other hand','for example','for instance','in fact','actually','honestly','unfortunately','fortunately','frankly','basically','anyway','meanwhile','overall','additionally','consequently','nevertheless','nonetheless','in other words','as far as i know','to be fair','in short','all in all','on top of that','having said that','that said','with that said','besides','besides that','in contrast','similarly','likewise','in the meantime','just to clarify','just to confirm','moving forward','going forward','as per our discussion','as i mentioned','as mentioned earlier','in particular','above all','after all','in any case','at the end of the day','to begin with','first and foremost','finally','lastly','to summarize','in summary','all things considered','on the whole','generally speaking','to my surprise','luckily','ideally','personally','admittedly','interestingly','surprisingly','instead','otherwise','still','also','hence','thus','even so','by contrast','as a matter of fact','for what it\'s worth','between you and me','believe it or not','come to think of it','if you ask me','speaking of which','long story short','no offense','to put it simply','simply put','in the long run','in theory','in practice','in reality','at first','at the same time','in any event'];
+  var CONNECTIVE = /^(however|therefore|in addition|moreover|furthermore|as a result|consequently|nevertheless|nonetheless|on the other hand|in contrast|by contrast|that said|having said that|with that said|besides|besides that|on top of that|similarly|likewise|meanwhile|in the meantime|also|hence|thus|even so|instead|otherwise|still|at the same time|in fact|as a matter of fact|in other words|for example|for instance|after all)$/;
+
+  /* ================================================================
+     ストレージ
+  ================================================================ */
+  var LS = {
+    get: function (k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+    set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { toast('保存に失敗しました（ストレージ容量をご確認ください）'); } }
+  };
+  var DEFAULT_SETTINGS = { apiKey: '', model: 'gemini-2.5-flash', engine: 'auto', voice: '', rate: 0.95, sheetUrl: '', sheetMode: 'replace', lastSync: null, grouped: false, tone: 'standard' };
+  var settings = Object.assign({}, DEFAULT_SETTINGS, LS.get('ef_settings', {}));
+  var custom = LS.get('ef_custom', []);
+  var sheet = LS.get('ef_sheet', []);
+  var favs = LS.get('ef_favs', []);
+  (function migrateCats() {
+    var fix = function (list, field) { var ch = false; list.forEach(function (x) { if (!CAT[x.c]) { x.c = classifyCategory(x[field] || ''); ch = true; } }); return ch; };
+    if (fix(custom, 'p')) LS.set('ef_custom', custom);
+    if (fix(sheet, 'p')) LS.set('ef_sheet', sheet);
+    if (fix(favs, 'phrase')) LS.set('ef_favs', favs);
+  })();
+  function saveSettings() { LS.set('ef_settings', settings); renderBadge(); }
+  function saveCustom() { LS.set('ef_custom', custom); }
+  function saveSheet() { LS.set('ef_sheet', sheet); }
+  function saveFavs() { LS.set('ef_favs', favs); }
+
+  /* ---------- 練習記録（Done） ---------- */
+  var done = LS.get('ef_done', {});   // { フレーズ(小文字): ['YYYY-MM-DD', ...] }
+  var DONE_MARK = '✅';
+  function saveDone() { LS.set('ef_done', done); }
+  function todayStr() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function doneKey(p) { return corePhrase(p).toLowerCase(); }
+  function doneDays(p) { return done[doneKey(p)] || []; }
+  function doneToday(p) { return doneDays(p).indexOf(todayStr()) >= 0; }
+  function toggleDoneToday(p) {
+    var k = doneKey(p), t = todayStr(), list = (done[k] || []).slice();
+    var i = list.indexOf(t);
+    if (i >= 0) list.splice(i, 1); else list.push(t);
+    if (list.length) done[k] = list; else delete done[k];
+    saveDone();
+    return i < 0;
+  }
+  /* ---------- アーカイブ（マスター済み） ---------- */
+  var archived = LS.get('ef_archived', {});   // { フレーズ(小文字): 日時 }
+  function saveArchived() { LS.set('ef_archived', archived); }
+  function isArchived(p) { return !!archived[doneKey(p)]; }
+  function activePhrases() { return allPhrases().filter(function (p) { return !isArchived(p.p); }); }
+  function archivedPhrases() { return allPhrases().filter(function (p) { return isArchived(p.p); }); }
+
+  function marksHTML(p, big) {
+    var days = doneDays(p), n = days.length;
+    if (!n) return '';
+    var em = n <= 10 ? new Array(n + 1).join(DONE_MARK) : DONE_MARK + '×' + n;
+    var last = days[days.length - 1].slice(5).replace('-', '/').replace(/^0/, '').replace('/0', '/');
+    return '<span class="inline-flex items-center gap-1.5 ' + (big ? 'text-base' : 'text-[13px]') + '" title="練習 ' + n + '日（最終 ' + last + '）">' +
+      '<span class="tracking-tight leading-none">' + em + '</span>' +
+      '<span class="text-[11px] text-slate-400">' + n + '日' + (doneToday(p) ? '・今日✓' : '・最終 ' + last) + '</span></span>';
+  }
+
+  /* ================================================================
+     アプリ状態
+  ================================================================ */
+  var S = {
+    tab: 'generate', input: '', selectedId: null, genCat: 'all', tone: settings.tone || 'standard',
+    results: [], meta: null, loading: false,
+    phraseCat: 'all', idea: '', sug: null, showForm: false, editId: null,
+    form: { p: '', ja: '', c: 'auto', t: 'auto' },
+    favCat: 'all', showKey: false, syncing: false
+  };
+
+  /* ================================================================
+     ユーティリティ
+  ================================================================ */
+  var $ = function (s) { return document.querySelector(s); };
+  var view = $('#view');
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function uid() { return 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+  function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+  function lowerFirst(s) { if (/^I(\b|')/.test(s)) return s; return /^[A-Z][a-z]/.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s; }
+  function endPunct(s, q) { s = s.trim(); return /[.!?]$/.test(s) ? s : s + (q ? '?' : '.'); }
+  function regEsc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+  var PATHS = {
+    sparkles: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>',
+    volume: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a9 9 0 0 1 0 14"/>',
+    copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+    star: '<path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+    list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+    search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+    refresh: '<path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    layers: '<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
+    x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+    key: '<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/>',
+    pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+    eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
+    loader: '<path d="M21 12a9 9 0 1 1-6.22-8.56"/>',
+    arrow: '<path d="M5 12h14M13 5l7 7-7 7"/>',
+    mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v4"/>',
+    archive: '<rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+    undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/>',
+    bulb: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V16h8v-1.3A7 7 0 0 0 12 2z"/>',
+    stop: '<rect x="6" y="6" width="12" height="12" rx="2.5"/>',
+    keyboard: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M8 16h8"/>'
+  };
+  function icon(name, cls, filled) {
+    return '<svg class="ic ' + (cls || '') + '" style="width:18px !important;height:18px !important;min-width:18px;flex-shrink:0" viewBox="0 0 24 24" fill="' + (filled ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + PATHS[name] + '</svg>';
+  }
+
+  var toastTimer;
+  function toast(msg) {
+    var t = $('#toast'); t.textContent = msg;
+    t.style.opacity = '1'; t.style.transform = 'translate(-50%,0)';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.style.opacity = '0'; t.style.transform = 'translate(-50%,8px)'; }, 2200);
+  }
+
+  /* ================================================================
+     フレーズ解析（品詞・用法の自動判定）
+  ================================================================ */
+  function corePhrase(raw) {
+    var s = String(raw || '').replace(/\s+/g, ' ').trim();
+    s = s.replace(/\s*(\.\.\.|…|〜|～|~|_{2,}|\bsomething\b|\bsth\b|\bsb\b|\bsomeone\b|\bA\b|\bX\b)\s*$/i, '').trim();
+    s = s.replace(/\s*[\(\[（].*?[\)\]）]\s*$/, '').trim();
+    s = s.replace(/[,，、:;]+$/, '').trim();
+    if (!/\?$/.test(s)) s = s.replace(/[.!。]+$/, '').trim();
+    return s;
+  }
+
+  function detectType(raw) {
+    var core = corePhrase(raw);
+    if (/[〜～~]/.test(core)) return 'pattern';
+    var s = core.toLowerCase().replace(/[’]/g, "'").replace(/[.!]+$/, '');
+    if (!s) return 'closer';
+    if (/\?$/.test(s)) return 'closer';
+    if (OPENERS.indexOf(s) >= 0) return 'opener';
+    if (/^(do|does|did) you (happen to )?(know|remember)$|^(could|can|would) you tell me$|^(i'm|i am) not sure$|^i wonder$|^any idea$|^i('d| would) like to know$|^i('m| am) curious$|^i don't know$/.test(s)) return 'stem_q';
+    if (/\b(if|whether)$/.test(s)) return 'stem_if';
+    if (/\bthat$/.test(s) || /^(i think|i believe|i guess|i suppose|i feel like|i hope|i bet|it seems( like)?|it looks like|it turns out|chances are|the thing is|i('m| am) afraid|i('m| am) sure|i('m| am) glad|i realized|i heard|what i mean is|i doubt|i reckon|i assume|i understand|i noticed|i wish|i'd say|it's possible|i'm pretty sure|no wonder)$/.test(s)) return 'stem_that';
+    if (/(would you mind|do you mind|how about|what about|what do you think (about|of)|thank(s| you) (so much )?for|i (really )?appreciate|(i'm |i am )?(so |really |terribly )?sorry (for|about)|apologi[sz]e for|look(ing)? forward to|(i'm|i am) (used to|interested in|thinking (about|of)|good at|into|excited about|worried about|tired of|proud of|looking forward to)|instead of|congratulations on|excuse me for|it's worth|i can't help|i'm not good at|feel like)$/.test(s)) return 'ing';
+    if (/((could|can|would|will) you( please)?|^please|(please )?feel free to|don't forget to|make sure (to|you)|remember to|don't hesitate to|be sure to|you (should|need to|have to|might want to|may want to|could)|if you could|you could)$/.test(s)) return 'stem_vp_you';
+    if (/(let me|let's|i('d| would) like to|i want to|i need to|i('m| am) (going|planning|trying|about|supposed|happy|willing|eager|writing|calling|hoping) to|i have to|i('ll| will)|i('d| would) love to|we (should|need to|have to|could|might)|is it possible to|i was hoping to|allow me to|i can't wait to|i decided to|i('ve| have) been meaning to|i tend to|i used to|shall we|may i|can i|could i|i('d| would) rather|i might|i should|i can)$/.test(s)) return 'stem_vp_self';
+    if (/\bto$/.test(s)) return 'stem_vp_self';
+    if (/\b(for|about|of|in|on|at|with|without|before|after|by)$/.test(s)) return 'ing';
+    var words = s.split(' ');
+    if (words.length <= 5 && /^(as|in|on|to|for|at|by|with|from|after|all|first|last|generally|according)\b/.test(s) && !/\b(you|me|him|her|them)\b/.test(s)) return 'opener';
+    if (words.length === 1 && /ly$/.test(s)) return 'opener';
+    if (/^(take|get|make|keep|catch|look|come|go|give|put|run|set|turn|work|deal|find|check|call|touch|figure|pick|hang|break|bring|carry|sort|follow|reach|stay|move|try|have|do|clear|wrap|circle|sleep|speak|talk|think|hold|cut|fill|end|point|play|pay|show|hand|drop|give|back|sign|log|shut|calm|cheer|slow|speed|build|come|let|see|meet|start|stop|finish|brush|freshen|look|stand|sit|walk|grab|kick|jump|ask|tell|send|write|read)\b/.test(s) && !/^(i|you|we|they)\b/.test(s)) return 'vp';
+    return 'closer';
+  }
+
+  function classifyCategory(raw) {
+    var s = ' ' + corePhrase(raw).toLowerCase().replace(/’/g, "'") + ' ';
+    if (/thank|appreciate|grateful|sorry|apolog|excuse me|owe you|forgive|my bad|didn't mean|should have|shouldn't have|if it weren't|if it hadn't|congratulat|just wanted to say|next time|lesson learned/.test(s)) return 'thanks';
+    if (/clarif|repeat|elaborate|correct me|did you say|do you mean|you mean|just to (confirm|clarify)|let me confirm|pardon|does that make sense|make sure|say that again|come again|so you're saying|if i understand/.test(s)) return 'confirm';
+    if (/conclusion|summar|to sum up|in short|all in all|in a nutshell|bottom line|\bpoints?\b|to wrap up|takeaway|finally|lastly|first of all|firstly|secondly/.test(s)) return 'conclude';
+    if (/let's|how does that sound|how about|what about|agree|sounds good|let you know|shall we|compromise|halfway|same page|what if|fair enough|go with|move forward|moving forward|going forward|keep you posted|circle back|touch base|follow up|get back to|align|consensus/.test(s)) return 'consensus';
+    if (/could you|would you mind|do you mind|why don't you|you might want|you may want|you should|would it be ok|would it be alright|may i|can i|could i get|do you want me|please|feel free|wondering if|be careful|don't forget|make sure to|i'd appreciate|if you could|is it possible/.test(s)) return 'request';
+    if (/\?|wonder|\bdo you\b|any idea|\bwhat\b|\bwhy\b|\bhow\b|\bwhere\b|\bwho\b|\bwhen\b|difference|happen to|tell me|educate|question|curious/.test(s)) return 'ask';
+    if (/excit|can't wait|looking forward|look forward|pleased|glad|happy|no wonder|\blove\b|hate|surpris|amazing|disappoint|worried|afraid|proud|relieved|thrilled|can't believe|what a/.test(s)) return 'feeling';
+    if (/think|believe|feel|opinion|honest|frankly|based on|not sure|kind of|sort of|rather|fan of|seems|guess|suppose|personally|whether|the more|in my view|if you ask me|to me|i doubt|i bet|probably|definitely/.test(s)) return 'opinion';
+    return 'topic';
+  }
+
+
+  function allPhrases() { return BUILTIN.concat(custom, sheet); }
+  function findPhrase(text) {
+    var k = corePhrase(text).toLowerCase(); if (!k) return null;
+    var list = allPhrases();
+    for (var i = 0; i < list.length; i++) if (corePhrase(list[i].p).toLowerCase() === k) return list[i];
+    return null;
+  }
+  function resolvePhrase(text) {
+    var sel = null;
+    if (S.selectedId) { sel = allPhrases().filter(function (p) { return p.id === S.selectedId; })[0]; if (sel && sel.p !== text) sel = null; }
+    var found = sel || findPhrase(text);
+    var base = found || { id: null, p: text.trim(), ja: '', c: classifyCategory(text), t: detectType(text), src: 'adhoc' };
+    return Object.assign({}, base, { core: corePhrase(base.p), t: base.t || detectType(base.p), c: base.c || classifyCategory(base.p) });
+  }
+
+  /* ================================================================
+     内蔵フォールバック文法エンジン
+  ================================================================ */
+  function domainOf(cat, tone) {
+    var map = { confirm: 'business', ask: 'daily', request: 'business', opinion: 'opinion', consensus: 'business', conclude: 'academic', feeling: 'opinion', thanks: 'daily', topic: 'daily' };
+    var d = map[cat] || 'daily';
+    if (tone === 'formal' && d === 'daily') d = 'business';
+    if (tone === 'casual' && d === 'business' && cat !== 'consensus') d = 'daily';
+    return d;
+  }
+  var DOMAIN_JA = { daily: '日常', business: 'ビジネス', opinion: '意見', academic: 'プレゼン・論文' };
+
+  function mixedClauses(primary) {
+    var others = ['daily', 'business', 'opinion', 'academic'].filter(function (d) { return d !== primary; });
+    var list = shuffle(BANK.clause[primary]).slice(0, 4).map(function (c) { return { c: c, d: primary }; });
+    shuffle(others).slice(0, 2).forEach(function (d) { list.push({ c: shuffle(BANK.clause[d])[0], d: d }); });
+    return list;
+  }
+  function hint(ja, part) { return (ja ? '〈' + ja + '〉' : '〈フレーズ〉') + ' ＋ ' + part; }
+
+  function localGenerate(ph, tone) {
+    if (ph.ex && ph.ex.length) return shuffle(ph.ex).slice(0, 5).map(function (x) { return { en: x.en, ja: x.ja, situation: '', hint: false, src: 'local' }; });
+    var P = ph.core, ja = ph.ja || '', t = ph.t, out = [];
+    var isQStem = /^(could|can|would|will|is|are|do|does|did|may|shall|how|what|where|when|why|who)\b/i.test(P);
+    var dom = domainOf(ph.c, tone);
+    var lower = P.toLowerCase();
+
+    if (t === 'opener') {
+      var connective = CONNECTIVE.test(lower);
+      var cls = mixedClauses(dom);
+      for (var i = 0; i < 5; i++) {
+        var a = cls[i % cls.length], b = cls[(i + 1) % cls.length];
+        if (connective && i % 2 === 0) {
+          out.push({ en: cap(a.c[0]) + '. ' + cap(P) + ', ' + b.c[0] + '.', ja: ja ? a.c[1] + '。' + ja.replace(/[〜~]/g, '') + '、' + b.c[1] + '。' : hint('', a.c[1] + '。' + b.c[1]), situation: DOMAIN_JA[b.d], hint: !ja });
+        } else {
+          out.push({ en: cap(P) + ', ' + a.c[0] + '.', ja: ja ? ja.replace(/[〜~]/g, '') + '、' + a.c[1] + '。' : hint('', a.c[1]), situation: DOMAIN_JA[a.d], hint: !ja });
+        }
+      }
+    } else if (t === 'stem_that') {
+      mixedClauses(dom).slice(0, 5).forEach(function (x) {
+        out.push({ en: cap(P) + ' ' + x.c[0] + '.', ja: hint(ja, x.c[1]), situation: DOMAIN_JA[x.d], hint: true });
+      });
+    } else if (t === 'stem_if') {
+      shuffle(BANK.ifClause).slice(0, 5).forEach(function (x) {
+        out.push({ en: endPunct(cap(P) + ' ' + x[0], isQStem), ja: hint(ja, x[1]), situation: '依頼・確認', hint: true });
+      });
+    } else if (t === 'stem_q') {
+      shuffle(BANK.embeddedQ).slice(0, 5).forEach(function (x) {
+        var q = /\b(know|tell me|remember|any idea)$/i.test(P) || isQStem;
+        out.push({ en: endPunct(cap(P) + ' ' + x[0], q), ja: hint(ja, x[1]), situation: '質問', hint: true });
+      });
+    } else if (t === 'stem_vp_you' || t === 'stem_vp_self') {
+      var bank = t === 'stem_vp_you' ? BANK.vpYou : BANK.vpSelf;
+      shuffle(bank).slice(0, 5).forEach(function (x) {
+        out.push({ en: endPunct(cap(P) + ' ' + x[0], isQStem), ja: hint(ja, x[1]), situation: t === 'stem_vp_you' ? '依頼' : '意志・希望', hint: true });
+      });
+    } else if (t === 'ing') {
+      var sub = /thank|appreciate|grateful|congratulat/.test(lower) ? 'thanks'
+        : /sorry|apolog|excuse/.test(lower) ? 'sorry'
+        : /forward|can't wait|excited/.test(lower) ? 'future'
+        : /mind/.test(lower) ? 'request' : 'general';
+      var q = /^(would|do|how|what|are|is|did|have)\b/.test(lower);
+      if (/^(look|looking|apologi[sz]e|appreciate)\b/.test(lower) && /^[a-z]/.test(P)) P = (/^looking/.test(lower) ? "I'm " : 'I ') + lowerFirst(P);
+      shuffle(BANK.ing[sub]).slice(0, 5).forEach(function (x) {
+        out.push({ en: endPunct(cap(P) + ' ' + x[0], q), ja: hint(ja, x[1]), situation: { thanks: '感謝', sorry: '謝罪', future: '期待', request: '依頼', general: '提案・話題' }[sub], hint: true });
+      });
+    } else if (t === 'vp') {
+      var when = shuffle(BANK.when);
+      BANK.vpTpl.forEach(function (tpl, i) {
+        var en = tpl[0].replace('{vp}', lowerFirst(P)).replace('{t}', when[i % when.length][0]);
+        out.push({ en: en, ja: hint(ja, when[i % when.length][1] + '・' + tpl[1]), situation: tpl[1], hint: true });
+      });
+    } else { // closer
+      if (/\?$/.test(P)) {
+        mixedClauses(dom === 'daily' ? 'business' : dom).slice(0, 5).forEach(function (x) {
+          out.push({ en: cap(x.c[0]) + '. ' + P, ja: x.c[1] + '。' + (ja || ''), situation: DOMAIN_JA[x.d], hint: false });
+        });
+      } else {
+        var kind = /apolog|sorry|my bad|forgive/.test(lower) ? 'apology'
+          : /owe you|thank|appreciate|grateful|lifesaver/.test(lower) ? 'gratitude'
+          : /worr|problem|no big deal|it's fine|it's okay|don't mention|never mind|all good/.test(lower) ? 'reassure'
+          : /get back|let you know|look into|keep you posted|check and|on it/.test(lower) ? 'promise' : 'agree';
+        shuffle(BANK.replyTo[kind]).slice(0, 5).forEach(function (x) {
+          out.push({ en: 'A: ' + x[0] + '\nB: ' + endPunct(cap(P)), ja: 'A: ' + x[1] + '\nB: ' + (ja || '（フレーズ）'), situation: '会話', hint: false });
+        });
+      }
+    }
+    return out.slice(0, 5).map(function (e) { e.src = 'local'; return e; });
+  }
+
+  /* ================================================================
+     Gemini AI
+  ================================================================ */
+  function normTxt(s) { return (' ' + String(s).toLowerCase().replace(/[’‘]/g, "'").replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim() + ' '); }
+  function fixedParts(core) {
+    return String(core || '').split(/\s*[〜～~…]\s*|\.{3}|\s*\/\s*/).map(function (s) { return s.replace(/^[\s,，.?!]+|[\s,，.?!]+$/g, ''); })
+      .filter(function (s) { return s.length >= 2 && !/^ing$/i.test(s) && !/^wh-?$/i.test(s); });
+  }
+  function validExample(en, ph) {
+    if (!en || typeof en !== 'string') return false;
+    var e = normTxt(en), core = normTxt(ph.core).trim();
+    if (!core) return true;
+    if (/[〜～~]/.test(ph.core) || ph.t === 'pattern') {
+      return fixedParts(ph.core).every(function (part) { return e.indexOf(normTxt(part).trim()) >= 0; });
+    }
+    if (ph.t === 'vp') {
+      var w = core.split(' '); var tail = w.slice(1).join(' ');
+      return tail ? e.indexOf(' ' + tail + ' ') >= 0 || e.indexOf(' ' + tail) >= 0 : true;
+    }
+    if (e.indexOf(' ' + core + ' ') < 0 && e.indexOf(' ' + core) < 0) return false;
+    if (ph.t === 'opener') {
+      var bad = new RegExp(regEsc(ph.core) + '\\s+(is|are|was|were|will|can|has|have|means)\\b', 'i');
+      if (bad.test(en)) return false;
+    }
+    return true;
+  }
+
+  function buildPrompt(ph, tone) {
+    var toneObj = TONES.filter(function (x) { return x.k === tone; })[0] || TONES[1];
+    return [
+      'You are an expert English teacher and a native-speaker copy editor.',
+      'Create exactly 5 natural example sentences that a native speaker would actually say or write, each containing the target English phrase.',
+      '',
+      'Target phrase: "' + ph.core + '"',
+      'Japanese meaning (may be empty): ' + (ph.ja || '(not given)'),
+      'Grammatical role (MUST follow): ' + (ROLE_PROMPT[ph.t] || ROLE_PROMPT.pattern),
+      (ph.u ? 'Usage note (MUST follow): ' + ph.u : ''),
+      'Usage category: ' + (CAT[ph.c] ? CAT[ph.c].l : 'general'),
+      'Tone: ' + toneObj.d,
+      '',
+      'Rules:',
+      '1. Keep the target phrase\'s words intact and use it strictly in the grammatical role above. Never change its part of speech.',
+      '2. Every sentence must be grammatically complete, idiomatic and natural. Avoid textbook-sounding or awkward English.',
+      '3. Vary the situations (work, daily life, email, conversation, study, travel) and the sentence structures. 8 to 25 words each.',
+      '4. For a standalone expression you may write a short two-line dialogue formatted exactly as "A: ...\\nB: ...".',
+      '5. Give a natural Japanese translation (not word-for-word) and a short Japanese situation label (max 10 characters).',
+      '',
+      'Return ONLY valid JSON in this shape, with no markdown:',
+      '{"examples":[{"en":"...","ja":"...","situation":"..."}]}'
+    ].join('\n');
+  }
+
+  /* ---------- Gemini 共通通信（モデル自動切替・エラー日本語化） ---------- */
+  var GAPI = 'https://generativelanguage.googleapis.com/v1beta/';
+  function gErr(code, msg) { var e = new Error(msg); e.code = code; return e; }
+  function explainGeminiError(status, raw) {
+    var m = String(raw || '');
+    if (status === 400 && /api key|API_KEY/i.test(m)) return gErr('key', 'APIキーが正しくありません。設定のキーを確認してください');
+    if (status === 401 || status === 403) return gErr('key', 'APIキーが無効か、このキーでは Gemini API が使えません（' + m.slice(0, 80) + '）');
+    if (status === 404 || /not found|is not supported|no longer available|deprecated/i.test(m)) return gErr('model', 'モデル「' + settings.model + '」が見つかりません');
+    if (status === 429) return gErr('quota', '利用上限に達しました。しばらく待ってから再試行してください');
+    if (status >= 500) return gErr('server', 'Gemini 側で一時的なエラーが発生しました（' + status + '）');
+    return gErr('other', m ? m.slice(0, 160) : 'HTTP ' + status);
+  }
+  function fetchT(url, opt, ms) {
+    var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, ms || 45000);
+    if (ctrl) opt.signal = ctrl.signal;
+    return fetch(url, opt).then(function (r) { clearTimeout(timer); return r; }, function (err) {
+      clearTimeout(timer);
+      if (err && err.name === 'AbortError') throw gErr('timeout', 'タイムアウトしました（通信が遅いか、応答に時間がかかっています）');
+      throw gErr('network', '通信できませんでした。Claude アプリのプレビュー画面では外部への通信が制限される場合があります。ファイルを Safari で開いて試してください');
+    });
+  }
+  // 使えるモデルを一覧から自動選択
+  function pickModel() {
+    return fetchT(GAPI + 'models?pageSize=200&key=' + encodeURIComponent(settings.apiKey), { method: 'GET' }, 20000).then(function (r) {
+      if (!r.ok) return r.text().then(function (t) { var m = ''; try { m = JSON.parse(t).error.message; } catch (e) {} throw explainGeminiError(r.status, m); });
+      return r.json();
+    }).then(function (d) {
+      var names = (d.models || []).filter(function (m) { return (m.supportedGenerationMethods || []).indexOf('generateContent') >= 0; })
+        .map(function (m) { return m.name.replace(/^models\//, ''); })
+        .filter(function (n) { return /^gemini-/.test(n) && !/(image|tts|audio|live|embedding|vision|aqa|learnlm|robotics|computer)/.test(n); });
+      if (!names.length) throw gErr('model', 'このキーで使える Gemini モデルが見つかりませんでした');
+      var score = function (n) {
+        var v = parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [0, 0])[1]) || 0;
+        return v * 100 + (/flash/.test(n) ? 20 : 0) + (/lite/.test(n) ? -8 : 0) + (/(preview|exp)/.test(n) ? -15 : 0) + (/latest/.test(n) ? 3 : 0) + (/pro/.test(n) ? -5 : 0);
+      };
+      names.sort(function (a, b) { return score(b) - score(a); });
+      return names[0];
+    });
+  }
+  function geminiText(prompt, temperature, _retried) {
+    var model = settings.model || 'gemini-2.5-flash';
+    return fetchT(GAPI + 'models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(settings.apiKey), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: temperature, responseMimeType: 'application/json' } })
+    }).then(function (r) {
+      if (!r.ok) return r.text().then(function (t) { var m = ''; try { m = JSON.parse(t).error.message; } catch (e) { m = t; } throw explainGeminiError(r.status, m); });
+      return r.json();
+    }).then(function (data) {
+      var c = data && data.candidates && data.candidates[0];
+      if (!c || !c.content || !c.content.parts) {
+        var why = (c && c.finishReason) || (data && data.promptFeedback && data.promptFeedback.blockReason) || '不明';
+        throw gErr('empty', 'AI から回答が返りませんでした（理由：' + why + '）');
+      }
+      return c.content.parts.map(function (p) { return p.thought ? '' : (p.text || ''); }).join('');
+    }).catch(function (err) {
+      if (err && err.code === 'model' && !_retried) {
+        return pickModel().then(function (m) {
+          settings.model = m; saveSettings();
+          toast('モデルを「' + m + '」に自動で切り替えました');
+          return geminiText(prompt, temperature, true);
+        });
+      }
+      throw err;
+    });
+  }
+  function parseJSONLoose(txt) {
+    txt = String(txt || '').replace(/^\s*```(json)?/i, '').replace(/```\s*$/, '').trim();
+    try { return JSON.parse(txt); } catch (e) {}
+    var a = txt.indexOf('{'), b = txt.lastIndexOf('}'), a2 = txt.indexOf('['), b2 = txt.lastIndexOf(']');
+    if (a2 >= 0 && (a < 0 || a2 < a) && b2 > a2) { try { return JSON.parse(txt.slice(a2, b2 + 1)); } catch (e) {} }
+    if (a >= 0 && b > a) { try { return JSON.parse(txt.slice(a, b + 1)); } catch (e) {} }
+    throw gErr('parse', 'AI の回答を読み取れませんでした。もう一度お試しください');
+  }
+  function geminiJSON(prompt, temperature) {
+    return geminiText(prompt, temperature == null ? 0.2 : temperature).then(parseJSONLoose);
+  }
+
+  function geminiGenerate(ph, tone) {
+    return geminiJSON(buildPrompt(ph, tone), 0.9).then(function (obj) {
+      var arr = Array.isArray(obj) ? obj : (obj.examples || []);
+      return arr.filter(function (x) { return x && validExample(x.en, ph); }).map(function (x) {
+        return { en: String(x.en).trim(), ja: String(x.ja || '').trim(), situation: String(x.situation || '').slice(0, 14), hint: false, src: 'gemini' };
+      });
+    });
+  }
+  function useAI() { return settings.engine !== 'local' && !!settings.apiKey; }
+
+  function generate() {
+    var raw = S.input.trim();
+    if (!raw) { toast('フレーズを入力または選択してください'); var el = $('#phraseInput'); if (el) el.focus(); return; }
+    if (S.loading) return;
+    var ph = resolvePhrase(raw);
+    talkReset(); S.loading = true; S.results = []; renderGenerate(); scrollToResults();
+    var done = function (list, note) {
+      if (list.length < 5) {
+        var used = {}; list.forEach(function (x) { used[x.en] = 1; });
+        localGenerate(ph, S.tone).forEach(function (x) { if (list.length < 5 && !used[x.en]) list.push(x); });
+      }
+      S.results = list.slice(0, 5).map(function (x) { x.id = uid(); x.phrase = ph.core; x.c = ph.c; return x; });
+      S.meta = { phrase: ph, note: note || '' }; animateResults = true;
+      S.loading = false;
+      if (S.tab === 'generate') { renderGenerate(); scrollToResults(); }
+    };
+    if (useAI()) {
+      geminiGenerate(ph, S.tone).then(function (list) {
+        done(list, list.length < 5 ? '一部をAI生成、不足分を内蔵エンジンで補完しました' : '');
+      }).catch(function (e) {
+        done([], 'AI生成に失敗したため内蔵エンジンで作成しました（' + (e && e.message ? e.message : 'エラー') + '）');
+      });
+    } else {
+      setTimeout(function () { done([], ''); }, 250);
+    }
+  }
+  function scrollToResults() { var r = $('#results'); if (r && window.innerWidth < 768) setTimeout(function () { r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60); }
+
+  /* ================================================================
+     音声・コピー・お気に入り
+  ================================================================ */
+  function getVoices() { try { return (window.speechSynthesis && speechSynthesis.getVoices()) || []; } catch (e) { return []; } }
+  function speak(text) {
+    if (!('speechSynthesis' in window)) { toast('この端末は音声読み上げに対応していません'); return; }
+    var t = String(text).replace(/^[AB]:\s*/gm, '').replace(/\n/g, ' ');
+    speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(t);
+    u.lang = 'en-US'; u.rate = Number(settings.rate) || 0.95;
+    var v = getVoices().filter(function (x) { return x.voiceURI === settings.voice; })[0];
+    if (!v) v = getVoices().filter(function (x) { return /^en[-_]US/i.test(x.lang); })[0];
+    if (v) { u.voice = v; u.lang = v.lang; }
+    speechSynthesis.speak(u);
+  }
+  function copyText(text) {
+    var ok = function () { toast('コピーしました'); };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(ok, function () { legacyCopy(text) ? ok() : toast('コピーできませんでした'); });
+    } else { legacyCopy(text) ? ok() : toast('コピーできませんでした'); }
+  }
+  function legacyCopy(text) {
+    var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta);
+    ta.select(); ta.setSelectionRange(0, text.length);
+    var r = false; try { r = document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta); return r;
+  }
+  function isFav(en) { return favs.some(function (f) { return f.en === en; }); }
+  function toggleFav(ex) {
+    var i = -1; favs.forEach(function (f, k) { if (f.en === ex.en) i = k; });
+    if (i >= 0) { favs.splice(i, 1); toast('お気に入りから外しました'); }
+    else { favs.unshift({ id: uid(), en: ex.en, ja: ex.hint ? '' : ex.ja, phrase: ex.phrase, c: ex.c, situation: ex.situation || '', at: Date.now() }); toast('お気に入りに追加しました'); }
+    saveFavs(); renderNav();
+  }
+
+  /* ================================================================
+     Googleスプレッドシート（CSV）同期
+  ================================================================ */
+  function parseCSV(text) {
+    var rows = [], row = [], f = '', q = false;
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      if (q) { if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+      else if (c === '"') q = true;
+      else if (c === ',') { row.push(f); f = ''; }
+      else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(f); rows.push(row); row = []; f = ''; }
+      else f += c;
+    }
+    if (f !== '' || row.length) { row.push(f); rows.push(row); }
+    return rows.filter(function (r) { return r.some(function (x) { return String(x).trim(); }); });
+  }
+  function toCsvUrl(url) {
+    url = url.trim();
+    var m = url.match(/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (m && !/\/d\/e\//.test(url) && !/output=csv|format=csv/.test(url)) {
+      var g = url.match(/[#&?]gid=(\d+)/);
+      return 'https://docs.google.com/spreadsheets/d/' + m[1] + '/export?format=csv' + (g ? '&gid=' + g[1] : '');
+    }
+    if (/\/d\/e\/.+\/pubhtml/.test(url)) return url.replace('/pubhtml', '/pub').replace(/\?.*$/, '') + '?output=csv' + ((url.match(/gid=(\d+)/) || [])[1] ? '&gid=' + url.match(/gid=(\d+)/)[1] : '');
+    return url;
+  }
+  function mapCategory(v, phrase) {
+    var s = String(v || '').trim().toLowerCase();
+    if (!s) return classifyCategory(phrase);
+    for (var i = 0; i < CATS.length; i++) if (CATS[i].l === v.trim() || CATS[i].k === s) return CATS[i].k;
+    var alias = { '確認': 'confirm', '聞き返': 'confirm', clarif: 'confirm', confirm: 'confirm', '質問': 'ask', '情報': 'ask', question: 'ask', ask: 'ask', '依頼': 'request', '提案': 'request', request: 'request', suggest: 'request', '意見': 'opinion', '判断': 'opinion', opinion: 'opinion', '合意': 'consensus', '議論': 'consensus', '交渉': 'consensus', '会議': 'consensus', consensus: 'consensus', agree: 'consensus', '結論': 'conclude', 'まとめ': 'conclude', 'プレゼン': 'conclude', '論文': 'conclude', conclu: 'conclude', summar: 'conclude', '気持ち': 'feeling', '感情': 'feeling', '反応': 'feeling', feeling: 'feeling', emotion: 'feeling', '感謝': 'thanks', '謝罪': 'thanks', '反省': 'thanks', thank: 'thanks', apolog: 'thanks', '話題': 'topic', 'つなぎ': 'topic', '転換': 'topic', topic: 'topic' };
+    for (var k in alias) if (s.indexOf(k) >= 0) return alias[k];
+    return classifyCategory(phrase);
+  }
+  function syncSheet() {
+    var url = (settings.sheetUrl || '').trim();
+    if (!url) { toast('スプレッドシートのURLを入力してください'); return; }
+    S.syncing = true; renderSettings();
+    fetch(toCsvUrl(url), { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    }).then(function (text) {
+      if (/^\s*<(!doctype|html)/i.test(text)) throw new Error('CSVではなくHTMLが返りました。「ウェブに公開 → CSV」の設定を確認してください');
+      var rows = parseCSV(text);
+      if (!rows.length) throw new Error('データが空です');
+      var head = rows[0].map(function (x) { return String(x).trim().toLowerCase(); });
+      var find = function (keys) { for (var i = 0; i < head.length; i++) for (var j = 0; j < keys.length; j++) if (head[i].indexOf(keys[j]) >= 0) return i; return -1; };
+      var iP = find(['phrase', 'english', 'フレーズ', '英語', '表現']);
+      var iJ = find(['meaning', 'japanese', 'ja', '意味', '日本語', '訳']);
+      var iC = find(['category', 'カテゴリ', '分類']);
+      var iT = find(['type', '品詞', '用法']);
+      var hasHeader = iP >= 0 || iJ >= 0 || iC >= 0;
+      if (!hasHeader) { iP = 0; iJ = 1; iC = 2; iT = 3; } else { if (iP < 0) iP = 0; }
+      var data = hasHeader ? rows.slice(1) : rows;
+      var seen = {}, list = [];
+      data.forEach(function (r) {
+        var p = String(r[iP] || '').trim(); if (!p) return;
+        var key = corePhrase(p).toLowerCase(); if (seen[key]) return; seen[key] = 1;
+        var t = iT >= 0 && TYPES[String(r[iT] || '').trim()] ? String(r[iT]).trim() : detectType(p);
+        list.push({ id: 's' + uid(), p: p, ja: iJ >= 0 ? String(r[iJ] || '').trim() : '', c: mapCategory(iC >= 0 ? r[iC] : '', p), t: t, src: 'sheet' });
+      });
+      if (!list.length) throw new Error('フレーズ列が見つかりませんでした');
+      if (settings.sheetMode === 'merge') {
+        var ex = {}; sheet.forEach(function (x) { ex[corePhrase(x.p).toLowerCase()] = 1; });
+        list = sheet.concat(list.filter(function (x) { return !ex[corePhrase(x.p).toLowerCase()]; }));
+      }
+      sheet = list; saveSheet();
+      settings.lastSync = Date.now(); saveSettings();
+      S.syncing = false; renderSettings();
+      toast(list.length + '件のフレーズを同期しました');
+    }).catch(function (e) {
+      S.syncing = false; renderSettings();
+      var msg = e && e.message ? e.message : '不明なエラー';
+      if (/Failed to fetch|Load failed|NetworkError/i.test(msg)) msg = '読み込めませんでした。シートが「ウェブに公開」されているか確認してください';
+      toast('同期失敗：' + msg);
+    });
+  }
+
+
+  /* ================================================================
+     トーク（スピーキング練習）
+  ================================================================ */
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  var T = { key: null };
+  var animateResults = false;
+
+  function findExample(key) {
+    var id = key.slice(2);
+    if (key.charAt(0) === 'r') return S.results.filter(function (x) { return x.id === id; })[0];
+    return favs.filter(function (x) { return x.id === id; })[0];
+  }
+  function exCore(ex) { return corePhrase(ex.phrase || (S.meta && S.meta.phrase ? S.meta.phrase.core : '')); }
+
+  // フレーズ部分だけ残して、それ以外の英単語を空欄にする
+  function blankHTML(text, core) {
+    var parts = fixedParts(core);
+    return String(text).split('\n').map(function (line) {
+      var label = '', m = line.match(/^([AB]):\s*/);
+      if (m) { label = '<span class="text-slate-400 font-semibold">' + m[1] + ':</span> '; line = line.slice(m[0].length); }
+      var keep = [], low = line.toLowerCase();
+      parts.forEach(function (p) {
+        var i = low.indexOf(p.toLowerCase());
+        if (i >= 0) keep.push([i, i + p.length]);
+      });
+      keep.sort(function (a, b) { return a[0] - b[0]; });
+      var out = '', pos = 0;
+      var blankify = function (seg) {
+        return esc(seg).replace(/[A-Za-z0-9’'\-]+/g, function (w) {
+          return '<span class="blank" style="width:' + Math.max(1.1, w.length * 0.52).toFixed(2) + 'em"></span>';
+        });
+      };
+      keep.forEach(function (r) {
+        if (r[0] < pos) return;
+        out += blankify(line.slice(pos, r[0])) + '<mark class="hl">' + esc(line.slice(r[0], r[1])) + '</mark>';
+        pos = r[1];
+      });
+      out += blankify(line.slice(pos));
+      return label + out;
+    }).join('\n');
+  }
+
+  function talkReset() {
+    if (T.rec) { try { T.rec.abort(); } catch (e) {} }
+    T = { key: null };
+  }
+  function rerenderTalk() {
+    if (S.tab === 'generate') { var r = $('#results'); if (r) r.innerHTML = resultsHTML(); }
+    else if (S.tab === 'favorites') renderFavorites();
+  }
+  function updateLive() {
+    var el = document.getElementById('talkLive');
+    if (!el) return;
+    var txt = (T.final + ' ' + T.interim).trim();
+    el.innerHTML = txt ? esc(T.final) + (T.interim ? ' <span class="text-slate-400">' + esc(T.interim) + '</span>' : '') : '<span class="text-slate-400">英語で話してください…</span>';
+    var st = document.getElementById('talkState');
+    if (st) st.textContent = T.listening ? '聞き取り中…' : '一時停止中（下のボタンで答え合わせ）';
+  }
+
+  function talkStart(key) {
+    var ex = findExample(key); if (!ex) return;
+    talkReset();
+    try { speechSynthesis.cancel(); } catch (e) {}
+    T = { key: key, phase: 'listening', final: '', interim: '', typed: '', typing: !SR, err: SR ? '' : 'unsupported', listening: false, restarts: 0, result: null, loading: false };
+    rerenderTalk();
+    if (SR) startRec();
+  }
+  function startRec() {
+    try {
+      var r = new SR();
+      r.lang = 'en-US'; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
+      r.onresult = function (e) {
+        var interim = '';
+        for (var i = e.resultIndex; i < e.results.length; i++) {
+          var t = e.results[i][0].transcript;
+          if (e.results[i].isFinal) T.final = (T.final + ' ' + t).replace(/\s+/g, ' ').trim(); else interim += t;
+        }
+        T.interim = interim.trim(); updateLive();
+      };
+      r.onerror = function (e) {
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed' || e.error === 'audio-capture') {
+          T.err = 'denied'; T.typing = true; T.listening = false; rerenderTalk();
+        }
+      };
+      r.onend = function () {
+        if (T.rec !== r) return;
+        T.listening = false; T.rec = null;
+        if (T.phase === 'listening' && !T.typing && !T.err && T.restarts < 6) { T.restarts++; startRec(); }
+        else updateLive();
+      };
+      T.rec = r; r.start(); T.listening = true; updateLive();
+    } catch (e) { T.err = 'unsupported'; T.typing = true; rerenderTalk(); }
+  }
+  function talkFinish() {
+    if (T.phase !== 'listening') return;
+    var rec = T.rec;
+    T.phase = 'result'; T.loading = true; rerenderTalk();
+    if (rec) { try { rec.stop(); } catch (e) {} }
+    setTimeout(function () {
+      if (T.rec === rec) T.rec = null;
+      var text = T.typing && T.typed.trim() ? T.typed.trim() : (T.final + ' ' + T.interim).replace(/\s+/g, ' ').trim();
+      if (!text && T.typed.trim()) text = T.typed.trim();
+      if (!text) {
+        talkReset(); rerenderTalk();
+        toast('聞き取れませんでした。もう一度「トーク」をタップしてください'); return;
+      }
+      T.said = text;
+      evaluateSpeech(findExample(T.key), text);
+    }, rec ? 450 : 0);
+  }
+
+  /* ---------- 評価 ---------- */
+  var NUMW = { zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10' };
+  var CONTR = { "i'm": 'i am', "you're": 'you are', "we're": 'we are', "they're": 'they are', "it's": 'it is', "that's": 'that is', "what's": 'what is', "there's": 'there is', "he's": 'he is', "she's": 'she is',
+    "don't": 'do not', "doesn't": 'does not', "didn't": 'did not', "can't": 'can not', "cannot": 'can not', "won't": 'will not', "isn't": 'is not', "aren't": 'are not', "wasn't": 'was not', "weren't": 'were not', "couldn't": 'could not', "wouldn't": 'would not', "shouldn't": 'should not', "haven't": 'have not', "hasn't": 'has not',
+    "i'll": 'i will', "you'll": 'you will', "we'll": 'we will', "it'll": 'it will', "i'd": 'i would', "you'd": 'you would', "we'd": 'we would', "i've": 'i have', "you've": 'you have', "we've": 'we have', "let's": 'let us' };
+  function wordsOf(s) {
+    var out = [];
+    normTxt(String(s).replace(/^[AB]:\s*/gm, ' ')).trim().split(' ').forEach(function (w) {
+      if (!w) return;
+      w = w.replace(/^'+|'+$/g, '');
+      if (CONTR[w]) out.push.apply(out, CONTR[w].split(' '));
+      else if (NUMW[w]) out.push(NUMW[w]);
+      else if (w) out.push(w);
+    });
+    return out;
+  }
+  function lcsDiff(a, b) {
+    var n = a.length, m = b.length, dp = [], i, j;
+    for (i = 0; i <= n; i++) { dp.push(new Array(m + 1).fill(0)); }
+    for (i = n - 1; i >= 0; i--) for (j = m - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    var ops = []; i = 0; j = 0;
+    while (i < n && j < m) {
+      if (a[i] === b[j]) { ops.push(['=', a[i]]); i++; j++; }
+      else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push(['-', a[i]]); i++; }
+      else { ops.push(['+', b[j]]); j++; }
+    }
+    while (i < n) ops.push(['-', a[i++]]);
+    while (j < m) ops.push(['+', b[j++]]);
+    return { len: dp[0][0], ops: ops };
+  }
+  function localEvaluate(ex, said) {
+    var core = exCore(ex);
+    var model = wordsOf(ex.en), user = wordsOf(said);
+    var d = lcsDiff(model, user);
+    var sim = model.length + user.length ? (2 * d.len) / (model.length + user.length) : 0;
+    var joined = ' ' + user.join(' ') + ' ';
+    var usesPhrase = fixedParts(core).every(function (p) { var w = wordsOf(p).join(' '); return !w || joined.indexOf(' ' + w + ' ') >= 0 || joined.indexOf(' ' + w) >= 0; });
+    var missing = d.ops.filter(function (o) { return o[0] === '-'; }).map(function (o) { return o[1]; });
+    var extra = d.ops.filter(function (o) { return o[0] === '+'; }).map(function (o) { return o[1]; });
+    var points = [];
+    if (!usesPhrase) points.push('フレーズ「' + core + '」が使われていないか、聞き取れませんでした。');
+    var ph = resolvePhrase(core);
+    if (ph.t === 'opener' && new RegExp(regEsc(core) + '\\s+(is|are|was|were|will|can|has|have|means)\\b', 'i').test(said)) points.push('「' + core + '」が主語のように使われています。「' + core + ', ＋主語＋動詞」の形にしましょう。');
+    if (user.length < 3) points.push('文が短すぎます。完全な文で言ってみましょう。');
+    if (missing.length) points.push('お手本にあって抜けている語：' + missing.slice(0, 8).join(', ') + (missing.length > 8 ? ' …' : ''));
+    if (extra.length) points.push('お手本にない語：' + extra.slice(0, 8).join(', ') + (extra.length > 8 ? ' …' : '') + '（言い換えとして正しい場合もあります）');
+    var score = Math.round(sim * 100);
+    if (!usesPhrase) score = Math.min(score, 60);
+    return { engine: 'local', score: score, usesPhrase: usesPhrase, ops: d.ops, points: points, grammar: null, meaning: null, corrected: '' };
+  }
+  function aiEvaluate(ex, said) {
+    var core = exCore(ex);
+    var prompt = [
+      'You are a friendly but precise English speaking coach for a Japanese learner.',
+      'The learner saw a Japanese sentence and the target phrase, then tried to say the English sentence aloud.',
+      '',
+      'Target phrase: "' + core + '"',
+      'Model answer (one possible correct answer): "' + ex.en.replace(/\n/g, ' ') + '"',
+      'Japanese meaning to express: "' + (ex.hint ? '' : (ex.ja || '')).replace(/\n/g, ' ') + '"',
+      'Learner said (speech-recognition transcript): "' + said + '"',
+      '',
+      'Evaluate the learner\'s sentence:',
+      '1. Grammar: is it grammatically correct English?',
+      '2. Meaning: does it naturally express the intended meaning? It does NOT need to match the model word for word; valid paraphrases are fully correct.',
+      '3. Phrase: does it use the target phrase correctly (right part of speech and structure)?',
+      'The transcript comes from speech recognition: ignore capitalization and punctuation, and do not penalize obvious recognition errors of similar-sounding words unless the meaning becomes wrong.',
+      '',
+      'Return ONLY JSON:',
+      '{"score": 0-100, "grammar_ok": true/false, "meaning_ok": true/false, "uses_phrase": true/false,',
+      ' "corrected": "the learner\'s sentence corrected into natural English (identical if already perfect)",',
+      ' "points": ["one short Japanese explanation per problem, quoting the wrong English part"],',
+      ' "comment": "one short, encouraging Japanese sentence"}',
+      'Use an empty points array if there are no problems.'
+    ].join('\n');
+    return geminiJSON(prompt).then(function (o) {
+      var loc = localEvaluate(ex, said);
+      return {
+        engine: 'gemini', score: Math.max(0, Math.min(100, Math.round(+o.score || 0))),
+        grammar: !!o.grammar_ok, meaning: !!o.meaning_ok, usesPhrase: !!o.uses_phrase,
+        corrected: String(o.corrected || '').trim(), points: Array.isArray(o.points) ? o.points.map(String) : [],
+        comment: String(o.comment || ''), ops: loc.ops
+      };
+    });
+  }
+  function evaluateSpeech(ex, said) {
+    if (!ex) return;
+    var key = T.key;
+    var done = function (res) { if (T.key !== key) return; T.result = res; T.loading = false; rerenderTalk(); };
+    if (useAI()) {
+      aiEvaluate(ex, said).then(done).catch(function (e) {
+        var r = localEvaluate(ex, said); r.note = 'AI評価に失敗したため内蔵チェックで評価しました（' + (e && e.message ? e.message : 'エラー') + '）'; done(r);
+      });
+    } else done(localEvaluate(ex, said));
+  }
+
+  /* ---------- トークの描画 ---------- */
+  function exampleTextHTML(ex, core, key) {
+    var hidden = T.key === key && T.phase === 'listening';
+    return '<p class="text-[17px] leading-relaxed text-slate-900 whitespace-pre-line break-words">' + (hidden ? blankHTML(ex.en, core) : highlight(ex.en, core)) + '</p>';
+  }
+  function talkBtnHTML(key) {
+    var on = T.key === key && T.phase === 'listening';
+    return '<button data-a="talk" data-key="' + key + '" class="inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl text-sm font-medium transition ' +
+      (on ? 'bg-rose-500 text-white mic-pulse' : 'text-slate-700 bg-slate-100 hover:bg-slate-200') + '" aria-label="トーク">' +
+      icon(on ? 'stop' : 'mic') + '<span class="text-xs">' + (on ? '完了' : 'トーク') + '</span></button>';
+  }
+  function scoreColor(s) { return s >= 85 ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : s >= 60 ? 'text-amber-600 border-amber-300 bg-amber-50' : 'text-rose-600 border-rose-300 bg-rose-50'; }
+  function verdictText(s) { return s >= 90 ? 'すばらしい！' : s >= 75 ? 'いい感じです' : s >= 55 ? 'あと一歩！' : 'もう一度挑戦しましょう'; }
+  function okChip(label, v) {
+    if (v === null || v === undefined) return '';
+    return '<span class="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border ' + (v ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200') + '">' + (v ? '✓' : '✗') + ' ' + label + '</span>';
+  }
+  function talkPanelHTML(key) {
+    if (T.key !== key) return '';
+    var box = 'mt-3 rounded-2xl border p-3.5 fade-up ';
+    if (T.phase === 'listening') {
+      var typing = T.typing;
+      return '<div class="' + box + 'border-rose-200 bg-rose-50/60">' +
+        (!typing ?
+          '<div class="flex items-center gap-2 text-xs font-semibold text-rose-600"><span class="w-2.5 h-2.5 rounded-full bg-rose-500 mic-pulse"></span><span id="talkState">' + (T.listening ? '聞き取り中…' : 'マイク起動中…') + '</span></div>' +
+          '<p id="talkLive" class="mt-2 min-h-[1.5rem] text-[16px] leading-relaxed text-slate-800 break-words"><span class="text-slate-400">英語で話してください…</span></p>'
+          :
+          '<p class="text-xs text-slate-600 leading-relaxed">' + (T.err === 'denied' ? 'マイクが許可されていません。' : 'このブラウザでは音声認識が使えません。') +
+          '英文を入力してください（iPad ではキーボードのマイクボタンで音声入力もできます）。</p>' +
+          '<textarea data-in="talk-typed" rows="2" class="mt-2 ' + inputCls + ' bg-white" placeholder="Type what you would say…" autocapitalize="sentences" spellcheck="false">' + esc(T.typed) + '</textarea>') +
+        '<div class="mt-3 flex flex-wrap items-center gap-2">' +
+          '<button data-a="talk-done" class="flex-1 min-w-[10rem] inline-flex items-center justify-center gap-2 h-11 rounded-xl bg-slate-900 text-white text-sm font-semibold">' + icon('check') + '話し終えたら答え合わせ</button>' +
+          (!typing ? '<button data-a="talk-type" class="' + btnGhost + '">' + icon('keyboard') + '<span class="text-xs">入力する</span></button>' : '') +
+          '<button data-a="talk-cancel" class="' + btnGhost + '">' + icon('x') + '<span class="text-xs">やめる</span></button>' +
+        '</div></div>';
+    }
+    if (T.loading || !T.result) {
+      return '<div class="' + box + 'border-slate-200 bg-slate-50 flex items-center gap-2 text-sm text-slate-600">' + icon('loader', 'spin') + '評価しています…</div>';
+    }
+    var r = T.result, s = r.score;
+    var userLine = r.ops.filter(function (o) { return o[0] !== '-'; }).map(function (o) {
+      return o[0] === '+' ? '<span class="text-amber-700 bg-amber-100 rounded px-0.5">' + esc(o[1]) + '</span>' : esc(o[1]);
+    }).join(' ');
+    var modelLine = r.ops.filter(function (o) { return o[0] !== '+'; }).map(function (o) {
+      return o[0] === '-' ? '<span class="text-rose-700 bg-rose-100 rounded px-0.5 font-semibold">' + esc(o[1]) + '</span>' : esc(o[1]);
+    }).join(' ');
+    var showCorrected = r.corrected && wordsOf(r.corrected).join(' ') !== wordsOf(T.said).join(' ');
+    return '<div class="' + box + 'border-slate-200 bg-slate-50">' +
+      '<div class="flex items-center gap-3">' +
+        '<div class="w-14 h-14 rounded-2xl border-2 grid place-items-center shrink-0 ' + scoreColor(s) + '"><div class="text-center leading-none"><div class="text-xl font-bold">' + s + '</div><div class="text-[9px] mt-0.5">点</div></div></div>' +
+        '<div class="min-w-0"><div class="font-bold text-slate-900">' + verdictText(s) + '</div>' +
+          '<div class="mt-1 flex flex-wrap gap-1">' + okChip('文法', r.grammar) + okChip('意味', r.meaning) + okChip('フレーズ', r.usesPhrase) +
+          '<span class="text-[11px] px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-500">' + (r.engine === 'gemini' ? 'Gemini 評価' : '内蔵チェック') + '</span></div></div>' +
+      '</div>' +
+      (r.comment ? '<p class="mt-2 text-sm text-slate-700">' + esc(r.comment) + '</p>' : '') +
+      '<div class="mt-3 space-y-2">' +
+        '<div class="rounded-xl bg-white border border-slate-200 p-3"><div class="text-[11px] font-semibold text-slate-400 mb-1">あなたの発話</div><p class="text-[15px] leading-relaxed text-slate-800 break-words">' + esc(T.said) + '</p></div>' +
+        (showCorrected ? '<div class="rounded-xl bg-emerald-50 border border-emerald-200 p-3"><div class="text-[11px] font-semibold text-emerald-700 mb-1">修正例</div><p class="text-[15px] leading-relaxed text-slate-900 break-words">' + esc(r.corrected) + '</p></div>' : '') +
+        '<details class="rounded-xl bg-white border border-slate-200 p-3"' + (r.engine === 'local' ? ' open' : '') + '><summary class="text-[11px] font-semibold text-slate-400 cursor-pointer">お手本との比較</summary>' +
+          '<div class="mt-2 text-[13px] leading-relaxed space-y-1"><div><span class="text-slate-400 mr-1">あなた</span>' + userLine + '</div><div><span class="text-slate-400 mr-1">お手本</span>' + modelLine + '</div></div>' +
+          '<p class="mt-1.5 text-[10px] text-slate-400">赤＝抜けた語 ・ 黄＝お手本にない語（短縮形は展開して比較）</p></details>' +
+      '</div>' +
+      (r.points.length ? '<ul class="mt-3 space-y-1.5">' + r.points.map(function (p) { return '<li class="flex gap-2 text-sm text-slate-700"><span class="text-amber-500 shrink-0">●</span><span>' + esc(p) + '</span></li>'; }).join('') + '</ul>' : '') +
+      (r.note ? '<p class="mt-2 text-[11px] text-amber-700">' + esc(r.note) + '</p>' : '') +
+      (r.engine === 'local' && !r.note ? '<p class="mt-2 text-[11px] text-slate-400">内蔵チェックはお手本との一致度で採点します。文法・意味の詳しい評価は設定で Gemini キーを登録すると有効になります。</p>' : '') +
+      '<div class="mt-3 flex flex-wrap gap-2">' +
+        '<button data-a="talk" data-key="' + key + '" class="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-slate-900 text-white text-sm font-semibold">' + icon('mic') + 'もう一度</button>' +
+        '<button data-a="talk-say" data-text="me" class="' + btnGhost + ' border border-slate-200 bg-white">' + icon('volume') + '<span class="text-xs">自分の発話</span></button>' +
+        (showCorrected ? '<button data-a="talk-say" data-text="fix" class="' + btnGhost + ' border border-slate-200 bg-white">' + icon('volume') + '<span class="text-xs">修正例</span></button>' : '') +
+        '<button data-a="talk-cancel" class="' + btnGhost + '">' + icon('x') + '<span class="text-xs">閉じる</span></button>' +
+      '</div></div>';
+  }
+
+  /* ================================================================
+     描画：共通パーツ
+  ================================================================ */
+  var TABS = [
+    { k: 'generate', l: '例文作成', i: 'sparkles' },
+    { k: 'phrases', l: 'フレーズ', i: 'list' },
+    { k: 'favorites', l: 'お気に入り', i: 'star' },
+    { k: 'settings', l: '設定', i: 'settings' }
+  ];
+  function renderNav() {
+    $('#navDesktop').innerHTML = TABS.map(function (t) {
+      var a = S.tab === t.k;
+      return '<button data-a="tab" data-tab="' + t.k + '" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition ' + (a ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100') + '">' + icon(t.i) + '<span>' + t.l + '</span>' + (t.k === 'favorites' && favs.length ? '<span class="text-[11px] px-1.5 rounded-full ' + (a ? 'bg-white/20' : 'bg-slate-200') + '">' + favs.length + '</span>' : '') + '</button>';
+    }).join('');
+    $('#navMobile').innerHTML = TABS.map(function (t) {
+      var a = S.tab === t.k;
+      return '<button data-a="tab" data-tab="' + t.k + '" class="relative flex flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-medium ' + (a ? 'text-slate-900' : 'text-slate-400') + '">' +
+        '<span class="w-12 h-7 rounded-full grid place-items-center ' + (a ? 'bg-slate-900 text-white' : '') + '">' + icon(t.i, '', a && t.k === 'favorites') + '</span>' + t.l +
+        (t.k === 'favorites' && favs.length ? '<span class="absolute top-1.5 right-[calc(50%-24px)] min-w-[16px] h-4 px-1 rounded-full bg-amber-400 text-slate-900 text-[10px] leading-4 text-center">' + favs.length + '</span>' : '') + '</button>';
+    }).join('');
+  }
+  function renderBadge() {
+    var ai = useAI();
+    $('#engineBadge').innerHTML = '<span class="w-2 h-2 rounded-full ' + (ai ? 'bg-emerald-500' : 'bg-slate-400') + '"></span>' + (ai ? 'Gemini AI' : '内蔵エンジン');
+  }
+  function catBadge(c) {
+    var o = CAT[c] || CAT.topic;
+    return '<span class="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border ' + o.chip + '"><span class="w-1.5 h-1.5 rounded-full ' + o.dot + '"></span>' + o.l + '</span>';
+  }
+  function typeBadge(t) { return '<span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">' + esc(TYPES[t] || t) + '</span>'; }
+  function chipsHTML(action, active, counts, withArchive) {
+    var all = [{ k: 'all', l: 'すべて', dot: 'bg-slate-800', chip: 'bg-slate-100 text-slate-700 border-slate-300' }].concat(CATS);
+    if (withArchive) all.push({ k: 'archive', l: '📦 アーカイブ', dot: 'bg-stone-600', chip: 'bg-stone-100 text-stone-700 border-stone-300 border-dashed' });
+    return '<div class="mt-2 -mx-1 px-1 flex gap-2 overflow-x-auto no-scrollbar pb-1">' + all.map(function (c) {
+      var a = active === c.k;
+      var n = counts ? (counts[c.k] || 0) : null;
+      return '<button data-a="' + action + '" data-cat="' + c.k + '" class="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-semibold border transition ' +
+        (a ? c.dot + ' text-white border-transparent shadow-sm' : c.chip + ' hover:brightness-95') + '">' +
+        (c.k !== 'all' ? '<span class="w-2 h-2 rounded-sm ' + (a ? 'bg-white/90' : c.dot) + '"></span>' : '') + c.l +
+        (n !== null ? '<span class="text-[11px] font-medium ' + (a ? 'text-white/75' : 'opacity-60') + '">' + n + '</span>' : '') + '</button>';
+    }).join('') + '</div>';
+  }
+  function countBy(list) { var o = { all: list.length }; list.forEach(function (p) { o[p.c] = (o[p.c] || 0) + 1; }); return o; }
+  function highlight(text, core) {
+    var t = esc(text);
+    if (!core) return t;
+    try {
+      var parts = fixedParts(core), hit = false;
+      parts.forEach(function (part) {
+        var re = new RegExp('(' + regEsc(esc(part)) + ')', 'i');
+        if (re.test(t)) { t = t.replace(re, '<mark class="hl">$1</mark>'); hit = true; }
+      });
+      if (!hit) {
+        var words = core.replace(/[?？]$/, '').split(' ');
+        if (words.length > 1) t = t.replace(new RegExp('(' + regEsc(esc(words.slice(1).join(' '))) + ')', 'i'), '<mark class="hl">$1</mark>');
+      }
+      return t;
+    } catch (e) { return t; }
+  }
+  var card = 'bg-white rounded-3xl border border-slate-200 shadow-sm';
+  var btnGhost = 'inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl text-sm text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition';
+  var inputCls = 'w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-3 outline-none focus:border-slate-400 focus:bg-white text-slate-800 placeholder:text-slate-400';
+
+  /* ================================================================
+     描画：例文作成タブ
+  ================================================================ */
+  function detectInfoHTML() {
+    var raw = S.input.trim();
+    if (!raw) return '<p class="text-xs text-slate-400">フレーズの用法（品詞）を自動判定し、文法が崩れない形で例文を組み立てます。</p>';
+    var ph = resolvePhrase(raw);
+    var registered = !!findPhrase(raw);
+    return '<div class="flex flex-wrap items-center gap-1.5">' + typeBadge(ph.t) + catBadge(ph.c) +
+      (ph.ja ? '<span class="text-xs text-slate-500">' + esc(ph.ja) + '</span>' : '') +
+      (!registered ? '<button data-a="quick-add" class="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border border-dashed border-slate-300 text-slate-500 hover:bg-slate-100">' + icon('plus') + '登録</button>' : '') + '</div>';
+  }
+
+  function renderGenerate() {
+    var list = S.genCat === 'archive' ? archivedPhrases() : activePhrases().filter(function (p) { return S.genCat === 'all' || p.c === S.genCat; });
+    view.innerHTML =
+      '<section class="' + card + ' p-4 sm:p-6">' +
+        '<div>' +
+          '<div class="flex items-center justify-between"><span class="text-xs font-semibold tracking-wider text-slate-500">登録フレーズから選ぶ</span><span class="text-xs text-slate-400">' + list.length + '件</span></div>' +
+          chipsHTML('gen-cat', S.genCat, null, archivedPhrases().length > 0) +
+          '<div id="pickBox" class="relative mt-3 pt-3 border-t border-slate-100 flex flex-wrap gap-2 max-h-40 overflow-y-auto pr-1">' +
+            (S.genCat === 'all' && list.length > 1 ? '<button data-a="pick-random" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-semibold text-white bg-gradient-to-r from-violet-500 to-fuchsia-500 shadow-sm active:scale-95 transition">🎲 ランダム</button>' : '') +
+            (list.map(function (p) {
+              var a = S.selectedId === p.id && S.input === p.p;
+              return '<button data-a="pick" data-id="' + p.id + '" class="px-3 py-1.5 rounded-full text-sm border transition ' + (a ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:border-slate-400') + '">' + esc(p.p) + '</button>';
+            }).join('') || '<p class="text-sm text-slate-400 py-2">このカテゴリーにはまだフレーズがありません</p>') +
+          '</div>' +
+        '</div>' +
+
+        '<div class="mt-5">' +
+        '<label for="phraseInput" class="block text-xs font-semibold tracking-wider text-slate-500">英語フレーズ</label>' +
+        '<div class="mt-2 flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 focus-within:border-slate-400 focus-within:bg-white px-3.5 transition">' +
+          '<span class="text-slate-400">' + icon('pen') + '</span>' +
+          '<input id="phraseInput" data-in="input" value="' + esc(S.input) + '" placeholder="例：In conclusion / Could you ..." class="flex-1 min-w-0 bg-transparent py-3 outline-none text-slate-900 placeholder:text-slate-400" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">' +
+          '<button id="clearBtn" data-a="clear-input" class="' + (S.input ? '' : 'hidden ') + 'p-1.5 rounded-full text-slate-400 hover:bg-slate-200" aria-label="クリア">' + icon('x') + '</button>' +
+        '</div>' +
+        '<div id="detectInfo" class="mt-2.5 min-h-[1.5rem]">' + detectInfoHTML() + '</div>' +
+        '</div>' +
+
+        '<div class="mt-5 flex flex-col gap-3">' +
+          '<div class="flex bg-slate-100 rounded-2xl p-1">' + TONES.map(function (t) {
+            var a = S.tone === t.k;
+            return '<button data-a="tone" data-tone="' + t.k + '" class="flex-1 py-2.5 rounded-xl text-sm font-medium transition ' + (a ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500') + '">' + t.l + '</button>';
+          }).join('') + '</div>' +
+          '<button data-a="generate" ' + (S.loading ? 'disabled' : '') + ' class="w-full inline-flex items-center justify-center gap-2.5 rounded-2xl bg-slate-900 text-white text-lg font-bold tracking-wide shadow-lg shadow-slate-900/20 hover:bg-slate-800 active:scale-[.98] disabled:opacity-60 transition" style="min-height:64px">' +
+            (S.loading ? icon('loader', 'spin') + '<span>生成中…</span>' : icon('sparkles') + '<span>例文を5つ生成</span>') +
+          '</button>' +
+        '</div>' +
+      '</section>' +
+      '<section id="results" class="mt-5 scroll-mt-20">' + resultsHTML() + '</section>';
+  }
+
+  function resultsHTML() {
+    if (S.loading) {
+      var sk = '';
+      for (var i = 0; i < 5; i++) sk += '<div class="skeleton bg-white rounded-2xl border border-slate-200 p-4"><div class="h-4 bg-slate-200 rounded w-4/5"></div><div class="mt-2.5 h-3 bg-slate-100 rounded w-3/5"></div></div>';
+      return '<div class="space-y-3">' + sk + '</div>';
+    }
+    if (!S.results.length) {
+      return '<div class="rounded-3xl border border-dashed border-slate-300 p-6 text-center">' +
+        '<div class="mx-auto w-10 h-10 rounded-2xl bg-white border border-slate-200 grid place-items-center text-slate-500">' + icon('sparkles') + '</div>' +
+        '<p class="mt-3 text-sm font-medium text-slate-700">フレーズを選んで「例文を5つ生成」をタップ</p>' +
+        '<p class="mt-1 text-xs text-slate-500 leading-relaxed">' + (useAI() ? 'Gemini AI がネイティブらしい例文と和訳を作成します。' : '内蔵の文法エンジンで作成します。設定で Gemini API キーを登録すると、より自然な例文と和訳が得られます。') + '</p></div>';
+    }
+    var m = S.meta || {};
+    var anyAI = S.results.some(function (r) { return r.src === 'gemini'; });
+    var head = '<div class="flex items-end justify-between gap-3 mb-3">' +
+      '<div class="min-w-0"><h2 class="text-base font-bold text-slate-900 truncate">「' + esc(m.phrase ? m.phrase.core : '') + '」の例文</h2>' +
+      '<div class="mt-1 flex flex-wrap items-center gap-1.5">' + (m.phrase ? typeBadge(m.phrase.t) : '') +
+      '<span class="text-[11px] font-medium px-2 py-0.5 rounded-full ' + (anyAI ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-200') + '">' + (anyAI ? 'Gemini AI' : '内蔵エンジン') + '</span></div></div>' +
+      '<div class="flex gap-1 shrink-0">' +
+        '<button data-a="copy-all" class="' + btnGhost + '" title="すべてコピー">' + icon('copy') + '<span class="hidden sm:inline">全コピー</span></button>' +
+        '<button data-a="generate" class="' + btnGhost + '" title="再生成">' + icon('refresh') + '<span class="hidden sm:inline">再生成</span></button>' +
+      '</div></div>' +
+      (m.note ? '<div class="mb-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">' + esc(m.note) + '</div>' : '');
+    var anim = animateResults; animateResults = false;
+    return head + '<div class="space-y-3">' + S.results.map(function (r, i) {
+      var fav = isFav(r.en);
+      var key = 'r:' + r.id, core = m.phrase ? m.phrase.core : '';
+      return '<article class="' + (anim ? 'fade-up ' : '') + 'bg-white rounded-2xl border ' + (T.key === key ? 'border-slate-400 ring-2 ring-slate-200' : 'border-slate-200') + ' shadow-sm p-4" style="animation-delay:' + (i * 55) + 'ms">' +
+        '<div class="flex items-start gap-3">' +
+          '<span class="mt-0.5 w-6 h-6 rounded-full bg-slate-900 text-white text-xs font-semibold grid place-items-center shrink-0">' + (i + 1) + '</span>' +
+          '<div class="flex-1 min-w-0">' +
+            (r.situation ? '<span class="inline-block mb-1.5 text-[11px] font-medium text-slate-500 bg-slate-100 rounded-md px-1.5 py-0.5">' + esc(r.situation) + '</span>' : '') +
+            exampleTextHTML(r, core, key) +
+            (r.ja ? '<p class="mt-1.5 text-sm leading-relaxed text-slate-500 whitespace-pre-line break-words">' + (r.hint ? '<span class="text-[10px] font-semibold text-slate-400 mr-1">語句ヒント</span>' : '') + esc(r.ja) + '</p>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="mt-2 flex justify-end gap-1">' +
+          '<button data-a="speak" data-i="' + i + '" class="' + btnGhost + '" aria-label="読み上げ">' + icon('volume') + '<span class="text-xs">再生</span></button>' +
+          talkBtnHTML(key) +
+          '<button data-a="fav" data-i="' + i + '" class="' + btnGhost + (fav ? ' text-amber-500' : '') + '" aria-label="お気に入り">' + icon('star', '', fav) + '<span class="text-xs">' + (fav ? '保存済み' : '保存') + '</span></button>' +
+        '</div>' + talkPanelHTML(key) + '</article>';
+    }).join('') + '</div>' + doneBarHTML(m.phrase ? m.phrase.core : '');
+  }
+  function doneBarHTML(core) {
+    if (!core) return '';
+    var today = doneToday(core), n = doneDays(core).length;
+    return '<div class="mt-5 ' + card + ' p-4 flex flex-col sm:flex-row sm:items-center gap-3">' +
+      '<div class="flex-1 min-w-0"><div class="text-xs font-semibold text-slate-500">「' + esc(core) + '」の練習記録</div>' +
+      '<div class="mt-1 min-h-[1.5rem]">' + (n ? marksHTML(core, true) : '<span class="text-sm text-slate-400">まだ記録がありません。練習したら Done を押しましょう</span>') + '</div></div>' +
+      '<button data-a="done" class="shrink-0 inline-flex items-center justify-center gap-2 h-12 px-6 rounded-2xl font-semibold transition active:scale-[.98] ' +
+        (today ? 'bg-emerald-50 text-emerald-700 border border-emerald-300' : 'bg-emerald-600 text-white hover:bg-emerald-700') + '">' +
+        (today ? icon('check') + '今日はDone済み' : DONE_MARK + ' Done') + '</button>' +
+      '</div>';
+  }
+
+  /* ================================================================
+     描画：フレーズ管理タブ
+  ================================================================ */
+  function phraseRow(p) {
+    var editable = p.src === 'custom';
+    return '<div class="group flex items-center gap-2 bg-white rounded-2xl border border-slate-200 px-3.5 py-3 hover:border-slate-300 transition">' +
+      '<button data-a="use" data-id="' + p.id + '" class="flex-1 min-w-0 text-left">' +
+        '<div class="font-semibold text-slate-900 break-words">' + esc(p.p) + '</div>' +
+        (doneDays(p.p).length ? '<div class="mt-0.5">' + marksHTML(p.p) + '</div>' : '') +
+        (p.ja ? '<div class="text-sm text-slate-500 break-words">' + esc(p.ja) + '</div>' : '') +
+        '<div class="mt-1.5 flex flex-wrap gap-1">' + (S.phraseCat === 'archive' ? '<span class="text-[11px] text-stone-500 self-center">元：</span>' + catBadge(p.c) : (S.phraseCat === 'all' && !settings.grouped ? catBadge(p.c) : '')) + typeBadge(p.t) +
+          (p.src !== 'builtin' ? '<span class="text-[11px] px-2 py-0.5 rounded-full ' + (p.src === 'sheet' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-slate-900 text-white') + '">' + (p.src === 'sheet' ? 'シート' : 'マイ') + '</span>' : '') +
+        '</div>' +
+      '</button>' +
+      '<div class="flex flex-col sm:flex-row gap-0.5 shrink-0">' +
+        '<button data-a="use" data-id="' + p.id + '" class="w-9 h-9 grid place-items-center rounded-xl text-slate-700 hover:bg-slate-100" aria-label="例文を作成">' + icon('sparkles') + '</button>' +
+        (isArchived(p.p)
+          ? '<button data-a="unarchive" data-id="' + p.id + '" class="h-9 px-2.5 inline-flex items-center gap-1 rounded-xl text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200" aria-label="元のカテゴリーに戻す">' + icon('undo') + '戻す</button>'
+          : '<button data-a="archive" data-id="' + p.id + '" class="w-9 h-9 grid place-items-center rounded-xl text-stone-500 hover:bg-stone-100" aria-label="アーカイブ（マスター済み）" title="アーカイブ（マスター済み）">' + icon('archive') + '</button>') +
+        (editable ? '<button data-a="edit" data-id="' + p.id + '" class="w-9 h-9 grid place-items-center rounded-xl text-slate-500 hover:bg-slate-100" aria-label="編集">' + icon('pen') + '</button>' +
+          '<button data-a="del" data-id="' + p.id + '" class="w-9 h-9 grid place-items-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-600" aria-label="削除">' + icon('trash') + '</button>' : '') +
+      '</div></div>';
+  }
+
+  function formHTML() {
+    var f = S.form;
+    var autoCat = f.p.trim() ? CAT[classifyCategory(f.p)].l : '—';
+    var autoType = f.p.trim() ? TYPES[detectType(f.p)] : '—';
+    return '<div class="' + card + ' p-4 sm:p-5 mb-4 fade-up">' +
+      '<div class="flex items-center justify-between mb-3"><h3 class="font-bold text-slate-900">' + (S.editId ? 'フレーズを編集' : '新しいフレーズを追加') + '</h3>' +
+      '<button data-a="close-form" class="w-8 h-8 grid place-items-center rounded-full text-slate-400 hover:bg-slate-100">' + icon('x') + '</button></div>' +
+      '<div class="space-y-3">' +
+        '<div><label class="text-xs font-semibold text-slate-500">英語フレーズ *</label><input data-in="form-p" value="' + esc(f.p) + '" placeholder="例：I was wondering if" class="mt-1 ' + inputCls + '" autocapitalize="off" autocorrect="off" spellcheck="false"></div>' +
+        '<div><label class="text-xs font-semibold text-slate-500">意味（日本語・任意）</label><input data-in="form-ja" value="' + esc(f.ja) + '" placeholder="例：〜していただけないかと思いまして" class="mt-1 ' + inputCls + '"></div>' +
+        '<div class="grid sm:grid-cols-2 gap-3">' +
+          '<div><label class="text-xs font-semibold text-slate-500">カテゴリー</label><select data-in="form-c" class="mt-1 ' + inputCls + '">' +
+            '<option value="auto"' + (f.c === 'auto' ? ' selected' : '') + '>自動分類</option>' +
+            CATS.map(function (c) { return '<option value="' + c.k + '"' + (f.c === c.k ? ' selected' : '') + '>' + c.l + '</option>'; }).join('') +
+          '</select><p class="mt-1 text-[11px] text-slate-500" id="autoCat">自動判定：<b>' + esc(autoCat) + '</b></p></div>' +
+          '<div><label class="text-xs font-semibold text-slate-500">用法（品詞）</label><select data-in="form-t" class="mt-1 ' + inputCls + '">' +
+            '<option value="auto"' + (f.t === 'auto' ? ' selected' : '') + '>自動判定</option>' +
+            Object.keys(TYPES).map(function (k) { return '<option value="' + k + '"' + (f.t === k ? ' selected' : '') + '>' + TYPES[k] + '</option>'; }).join('') +
+          '</select><p class="mt-1 text-[11px] text-slate-500" id="autoType">自動判定：<b>' + esc(autoType) + '</b></p></div>' +
+        '</div>' +
+        '<button data-a="save-form" class="w-full h-12 rounded-2xl bg-slate-900 text-white font-semibold inline-flex items-center justify-center gap-2 hover:bg-slate-800">' + icon('check') + (S.editId ? '更新する' : '追加する') + '</button>' +
+      '</div></div>';
+  }
+
+
+  /* ================================================================
+     イメージからフレーズ提案
+  ================================================================ */
+  var IDEAS = [{"re": "断|遠慮|辞退|お断り|ノー|拒否", "c": "opinion", "list": [{"p": "I'm afraid I can't", "ja": "申し訳ないのですが〜できません", "n": "丁寧で角が立たない断り方の定番", "en": "I'm afraid I can't make it to the meeting on Friday.", "eja": "申し訳ないのですが、金曜日の会議には出られません。"}, {"p": "I'd love to, but", "ja": "ぜひそうしたいのですが〜", "n": "気持ちは前向きだと伝えてから断る", "en": "I'd love to, but I already have plans this weekend.", "eja": "ぜひ行きたいのですが、今週末はもう予定があるんです。"}, {"p": "I'll have to pass on", "ja": "今回は見送らせてください", "n": "カジュアルに柔らかく断る", "en": "Thanks for asking, but I'll have to pass on the party this time.", "eja": "誘ってくれてありがとう、でも今回のパーティーは見送るよ。"}]}, {"re": "反対|異論|違う意見|同意しない|納得できない|反論", "c": "opinion", "list": [{"p": "I see your point, but", "ja": "おっしゃることは分かりますが〜", "n": "相手を認めてから反対意見を言う", "en": "I see your point, but I think we need more data first.", "eja": "おっしゃることは分かりますが、まずはもっとデータが必要だと思います。"}, {"p": "I'm not sure I agree", "ja": "賛成できるか分かりません", "n": "やんわりと反対を示す", "en": "I'm not sure I agree with that approach.", "eja": "そのやり方に賛成できるかは分かりません。"}, {"p": "I have a slightly different view", "ja": "少し違う見方をしています", "n": "丁寧に別の意見を出す", "en": "I have a slightly different view on the budget.", "eja": "予算については少し違う見方をしています。"}]}, {"re": "賛成|同意|その通り|同感|いいね", "c": "consensus", "list": [{"p": "I couldn't agree more", "ja": "大賛成です", "n": "強い同意", "en": "I couldn't agree more. Let's go with that plan.", "eja": "大賛成です。その案で行きましょう。"}, {"p": "That's a good point", "ja": "いい指摘ですね", "n": "相手の意見を認める", "en": "That's a good point. I hadn't thought of that.", "eja": "いい指摘ですね。それは考えていませんでした。"}, {"p": "I'm with you on that", "ja": "その点は同じ意見です", "n": "カジュアルな同意", "en": "I'm with you on that. The deadline is too tight.", "eja": "その点は同感です。締め切りが厳しすぎます。"}]}, {"re": "感謝|お礼|ありがと|礼を", "c": "thanks", "list": [{"p": "I really appreciate", "ja": "〜に本当に感謝しています", "n": "丁寧でどんな場面でも使える", "en": "I really appreciate your help with the report.", "eja": "レポートを手伝ってくれて本当に感謝しています。"}, {"p": "I can't thank you enough for", "ja": "〜には感謝してもしきれません", "n": "深い感謝を伝える", "en": "I can't thank you enough for your support this year.", "eja": "今年のご支援には感謝してもしきれません。"}, {"p": "Thanks a lot for", "ja": "〜をどうもありがとう", "n": "カジュアルなお礼", "en": "Thanks a lot for the ride yesterday.", "eja": "昨日は送ってくれてどうもありがとう。"}]}, {"re": "謝|ごめん|すみません|詫び|申し訳", "c": "thanks", "list": [{"p": "I apologize for", "ja": "〜について申し訳ありません", "n": "フォーマルな謝罪", "en": "I apologize for the delay in my reply.", "eja": "返信が遅れて申し訳ありません。"}, {"p": "My apologies for", "ja": "〜について失礼しました", "n": "ビジネスメールで簡潔に謝る", "en": "My apologies for the confusion earlier.", "eja": "先ほどは混乱させてしまい失礼しました。"}, {"p": "Sorry to bother you, but", "ja": "お手数ですが／お邪魔してすみませんが", "n": "話しかける・頼む前のクッション", "en": "Sorry to bother you, but do you have a minute?", "eja": "お邪魔してすみませんが、少しお時間ありますか？"}]}, {"re": "催促|リマインド|返事|まだ|進捗|フォロー", "c": "request", "list": [{"p": "Just a friendly reminder that", "ja": "念のためのリマインドですが〜", "n": "角を立てずに催促する", "en": "Just a friendly reminder that the report is due tomorrow.", "eja": "念のためですが、レポートの締め切りは明日です。"}, {"p": "I'm just following up on", "ja": "〜の件でフォローさせてください", "n": "返事を促すメールの定番", "en": "I'm just following up on my email from last week.", "eja": "先週お送りしたメールの件でご連絡しました。"}, {"p": "Could you give me an update on", "ja": "〜の進捗を教えてもらえますか", "n": "進捗を尋ねる", "en": "Could you give me an update on the project?", "eja": "プロジェクトの進捗を教えてもらえますか？"}]}, {"re": "依頼|お願い|頼|してほしい|してもらいたい", "c": "request", "list": [{"p": "Would you mind", "ja": "〜していただいてもいいですか", "n": "丁寧な依頼（後ろは -ing）", "en": "Would you mind checking this document?", "eja": "この書類を確認していただいてもいいですか？"}, {"p": "I was wondering if you could", "ja": "〜していただけないかと思いまして", "n": "とても控えめで丁寧な依頼", "en": "I was wondering if you could help me with the slides.", "eja": "スライドを手伝っていただけないかと思いまして。"}, {"p": "Could you possibly", "ja": "もし可能なら〜していただけますか", "n": "無理を承知でお願いする", "en": "Could you possibly send it by noon?", "eja": "もし可能でしたら、昼までに送っていただけますか？"}]}, {"re": "提案|アイデア|案|どうかな|してみては", "c": "request", "list": [{"p": "What if we", "ja": "〜してみるのはどうでしょう", "n": "アイデアを気軽に出す", "en": "What if we move the meeting to Friday?", "eja": "会議を金曜日にずらしてみるのはどうでしょう？"}, {"p": "I'd suggest that we", "ja": "〜することをおすすめします", "n": "はっきりした提案", "en": "I'd suggest that we start with a small test.", "eja": "まずは小さなテストから始めることをおすすめします。"}, {"p": "It might be a good idea to", "ja": "〜するのがいいかもしれません", "n": "押し付けない提案", "en": "It might be a good idea to ask the client first.", "eja": "まずクライアントに聞いてみるのがいいかもしれません。"}]}, {"re": "確認|聞き返|念のため|意味|理解", "c": "confirm", "list": [{"p": "Just to confirm,", "ja": "念のため確認ですが、", "n": "認識合わせの定番", "en": "Just to confirm, the meeting is at 3 p.m., right?", "eja": "念のため確認ですが、会議は午後3時ですよね？"}, {"p": "So what you're saying is", "ja": "つまり〜ということですね", "n": "相手の話を要約して確認", "en": "So what you're saying is we need more time.", "eja": "つまり、もっと時間が必要ということですね。"}, {"p": "Did you mean", "ja": "〜という意味でしたか", "n": "聞き取れた内容を確かめる", "en": "Did you mean next Monday or the one after?", "eja": "来週の月曜日のことですか、それともその次ですか？"}]}, {"re": "意見|考え|思う|見解|立場", "c": "opinion", "list": [{"p": "From my point of view,", "ja": "私の立場から見ると、", "n": "意見を述べる前置き", "en": "From my point of view, the design is too complicated.", "eja": "私から見ると、そのデザインは複雑すぎます。"}, {"p": "If you ask me,", "ja": "私に言わせれば、", "n": "カジュアルな意見の前置き", "en": "If you ask me, we should launch it now.", "eja": "私に言わせれば、今すぐ発売すべきです。"}, {"p": "The way I see it,", "ja": "私の見方では、", "n": "自分の解釈を示す", "en": "The way I see it, this is a great chance for us.", "eja": "私の見方では、これは私たちにとって大きなチャンスです。"}]}, {"re": "話題|ところで|変え|そういえば|脱線", "c": "topic", "list": [{"p": "On a different note,", "ja": "話は変わりますが、", "n": "ていねいに話題を変える", "en": "On a different note, how was your trip?", "eja": "話は変わりますが、旅行はどうでしたか？"}, {"p": "That reminds me,", "ja": "それで思い出したけど、", "n": "連想で話題を移す", "en": "That reminds me, I need to call the bank.", "eja": "それで思い出した、銀行に電話しないと。"}, {"p": "Going back to", "ja": "〜の話に戻りますが", "n": "脱線から本題に戻す", "en": "Going back to the budget, do we have any updates?", "eja": "予算の話に戻りますが、何か進展はありますか？"}]}, {"re": "時間稼ぎ|考えさせ|えーと|即答|少し待", "c": "topic", "list": [{"p": "Let me think about it", "ja": "少し考えさせてください", "n": "即答を避ける", "en": "That's an interesting offer. Let me think about it.", "eja": "興味深いお話ですね。少し考えさせてください。"}, {"p": "That's a good question", "ja": "いい質問ですね", "n": "答える前の間を作る", "en": "That's a good question. I'll need to check the numbers.", "eja": "いい質問ですね。数字を確認する必要があります。"}, {"p": "Give me a second", "ja": "ちょっと待ってください", "n": "カジュアルに少し待ってもらう", "en": "Give me a second, I'm looking for the file.", "eja": "ちょっと待って、ファイルを探しているところです。"}]}, {"re": "励ま|応援|元気|落ち込|大丈夫", "c": "feeling", "list": [{"p": "You've got this", "ja": "君ならできるよ", "n": "本番前の励まし", "en": "Don't worry about the interview. You've got this!", "eja": "面接は心配しないで。君ならできるよ！"}, {"p": "Hang in there", "ja": "がんばって／もう少しの辛抱だよ", "n": "つらい状況の人を励ます", "en": "Hang in there. The project is almost finished.", "eja": "がんばって。プロジェクトはもうすぐ終わるよ。"}, {"p": "Don't be too hard on yourself", "ja": "自分を責めすぎないで", "n": "失敗した人を慰める", "en": "Everyone makes mistakes. Don't be too hard on yourself.", "eja": "誰でもミスはするよ。自分を責めすぎないで。"}]}, {"re": "褒|称賛|すごい|評価|よくやった", "c": "feeling", "list": [{"p": "Great job on", "ja": "〜よくやったね", "n": "成果を具体的に褒める", "en": "Great job on the presentation today!", "eja": "今日のプレゼン、よくやったね！"}, {"p": "I'm impressed with", "ja": "〜に感心しました", "n": "しっかり評価を伝える", "en": "I'm impressed with how quickly you learned it.", "eja": "あっという間に覚えたことに感心しました。"}, {"p": "You did a great job", "ja": "素晴らしい仕事でした", "n": "シンプルで万能な褒め言葉", "en": "You did a great job organizing the event.", "eja": "イベントの運営、素晴らしい仕事でした。"}]}, {"re": "驚|びっくり|まさか|信じられ", "c": "feeling", "list": [{"p": "I can't believe", "ja": "〜なんて信じられない", "n": "驚きをそのまま表す", "en": "I can't believe it's already October.", "eja": "もう10月だなんて信じられない。"}, {"p": "You're kidding", "ja": "冗談でしょ？", "n": "カジュアルな驚き", "en": "You're kidding! You won the contest?", "eja": "冗談でしょ！コンテストで優勝したの？"}, {"p": "What a surprise", "ja": "なんて驚きなんだ", "n": "嬉しい驚き", "en": "What a surprise to see you here!", "eja": "ここで会うなんてびっくり！"}]}, {"re": "まとめ|締め|結論|最後に|要するに", "c": "conclude", "list": [{"p": "To wrap up,", "ja": "まとめると、", "n": "会議やプレゼンの締め", "en": "To wrap up, we'll launch the campaign in May.", "eja": "まとめると、キャンペーンは5月に開始します。"}, {"p": "The bottom line is", "ja": "要するに〜ということです", "n": "結論をはっきり言う", "en": "The bottom line is we need a bigger budget.", "eja": "要するに、もっと予算が必要だということです。"}, {"p": "All in all,", "ja": "全体として、", "n": "総括する", "en": "All in all, it was a successful year.", "eja": "全体として、成功した一年でした。"}]}, {"re": "遅れ|遅刻|遅く|待たせ", "c": "thanks", "list": [{"p": "I'm running a bit late", "ja": "少し遅れています", "n": "遅刻の連絡", "en": "Sorry, I'm running a bit late. I'll be there in ten minutes.", "eja": "ごめんなさい、少し遅れています。10分で着きます。"}, {"p": "Sorry to keep you waiting", "ja": "お待たせしてすみません", "n": "待たせた相手に一言", "en": "Sorry to keep you waiting. Shall we start?", "eja": "お待たせしてすみません。始めましょうか？"}, {"p": "I'll be there in", "ja": "〜で着きます", "n": "到着時間を伝える", "en": "I'll be there in five minutes.", "eja": "5分で着きます。"}]}, {"re": "自信がない|曖昧|たぶん|うろ覚え|確かでない|多分", "c": "opinion", "list": [{"p": "I'm not a hundred percent sure, but", "ja": "100%確かではないのですが", "n": "確信がないと前置きする", "en": "I'm not a hundred percent sure, but I think it starts at nine.", "eja": "確かではないのですが、9時開始だと思います。"}, {"p": "As far as I know,", "ja": "私の知る限りでは、", "n": "情報の範囲を限定する", "en": "As far as I know, the office is closed on Monday.", "eja": "私の知る限りでは、月曜日はオフィスは休みです。"}, {"p": "If I remember correctly,", "ja": "記憶が正しければ、", "n": "うろ覚えであることを示す", "en": "If I remember correctly, we met in Osaka.", "eja": "記憶が正しければ、大阪でお会いしましたね。"}]}, {"re": "誘|招待|一緒に|行かない", "c": "request", "list": [{"p": "Would you like to", "ja": "〜しませんか", "n": "丁寧に誘う", "en": "Would you like to join us for dinner?", "eja": "一緒に夕食をいかがですか？"}, {"p": "Are you up for", "ja": "〜する気ある？", "n": "カジュアルに誘う", "en": "Are you up for a quick coffee?", "eja": "ちょっとコーヒーでもどう？"}, {"p": "Feel free to join us", "ja": "よかったら参加してね", "n": "気軽に誘う", "en": "We're having a barbecue on Sunday. Feel free to join us.", "eja": "日曜日にバーベキューするんだ。よかったら来てね。"}]}, {"re": "会議|議題|進行|司会|始め|次に", "c": "consensus", "list": [{"p": "Let's get started", "ja": "始めましょう", "n": "会議の開始", "en": "It's ten o'clock, so let's get started.", "eja": "10時になったので始めましょう。"}, {"p": "Let's move on to", "ja": "〜に移りましょう", "n": "次の議題に進める", "en": "Let's move on to the next item on the agenda.", "eja": "次の議題に移りましょう。"}, {"p": "Does anyone have any questions?", "ja": "何か質問はありますか？", "n": "質疑応答を促す", "en": "That's all from me. Does anyone have any questions?", "eja": "私からは以上です。何か質問はありますか？"}]}, {"re": "残念|がっかり|失望|惜しい", "c": "feeling", "list": [{"p": "That's a shame", "ja": "それは残念", "n": "相手の残念な知らせに", "en": "You can't come? That's a shame.", "eja": "来られないの？それは残念。"}, {"p": "What a pity", "ja": "なんて残念な", "n": "少し改まった残念さ", "en": "What a pity the event was canceled.", "eja": "イベントが中止になったなんて残念です。"}, {"p": "That's too bad", "ja": "それはお気の毒に", "n": "軽い同情", "en": "You caught a cold? That's too bad.", "eja": "風邪をひいたの？それは大変だね。"}]}];
+  function localSuggest(q) {
+    var hits = [];
+    IDEAS.forEach(function (g) { if (new RegExp(g.re).test(q)) g.list.forEach(function (x) { hits.push(Object.assign({ c: g.c }, x)); }); });
+    return hits.slice(0, 3);
+  }
+  function suggestPhrases() {
+    var q = S.idea.trim();
+    if (!q) { toast('イメージを入力してください'); return; }
+    S.sug = { q: q, loading: true, list: [], note: '' };
+    renderPhrases();
+    var finish = function (list, note) {
+      if (!S.sug || S.sug.q !== q) return;
+      S.sug.loading = false; S.sug.note = note || '';
+      S.sug.list = list.map(function (x) {
+        var c = CAT[x.c] ? x.c : classifyCategory(x.p);
+        return { p: corePhrase(x.p) === x.p ? x.p : x.p.trim(), ja: x.ja || '', n: x.n || '', u: x.u || '', en: x.en || '', eja: x.eja || '', c: c, t: detectType(x.p) };
+      });
+      if (S.tab === 'phrases') renderPhrases();
+    };
+    if (useAI()) {
+      var existing = allPhrases().map(function (p) { return p.p; }).slice(0, 200).join(' | ');
+      var prompt = [
+        'You are an expert English coach for a Japanese business professional.',
+        'The learner describes, in Japanese, a situation or intention they want to express in English:',
+        '"' + q + '"',
+        '',
+        'Suggest exactly 3 different, natural, reusable English PHRASES (short chunks of 2-8 words that native speakers really use, not full sentences unless the expression is naturally a full sentence) that fit this intention.',
+        'Offer variety in nuance/formality (e.g. one polite/business, one neutral, one casual).',
+        'Avoid phrases already registered: ' + existing,
+        'Choose the category key that best matches the PURPOSE of each phrase from: ' + CATS.map(function (c) { return c.k + '=' + c.l; }).join(', ') + '.',
+        '',
+        'Return ONLY JSON:',
+        '{"suggestions":[{"phrase":"...","ja":"natural Japanese meaning","nuance":"short Japanese note on nuance/when to use (max 30 chars)","usage":"short English grammar note, e.g. \'+ -ing\' or \'+ complete clause\'","example":"one natural example sentence using the phrase","example_ja":"Japanese translation of the example","category":"key"}]}'
+      ].join('\n');
+      geminiJSON(prompt, 0.8).then(function (o) {
+        var arr = (o && (o.suggestions || o)) || [];
+        var list = arr.filter(function (x) { return x && x.phrase; }).slice(0, 3).map(function (x) {
+          return { p: String(x.phrase).trim(), ja: x.ja, n: x.nuance, u: x.usage, en: x.example, eja: x.example_ja, c: x.category };
+        });
+        if (!list.length) throw new Error('提案が空でした');
+        finish(list);
+      }).catch(function (e) {
+        var loc = localSuggest(q);
+        finish(loc, 'AI提案に失敗したため内蔵辞書から提案しました（' + (e && e.message ? e.message : 'エラー') + '）');
+      });
+    } else {
+      setTimeout(function () {
+        var loc = localSuggest(q);
+        finish(loc, loc.length ? '' : 'none');
+      }, 200);
+    }
+  }
+  function registerSuggestion(i) {
+    var x = S.sug && S.sug.list[i]; if (!x) return;
+    if (findPhrase(x.p)) { toast('すでに登録されています'); return; }
+    var item = { id: uid(), p: x.p, ja: x.ja, c: x.c, t: x.t, u: x.u || '', src: 'custom' };
+    custom.unshift(item); saveCustom();
+    toast('「' + CAT[item.c].l + '」に登録しました');
+    renderPhrases();
+  }
+  function ideaPanelHTML() {
+    var sg = S.sug, body = '';
+    if (sg) {
+      if (sg.loading) body = '<div class="mt-3 flex items-center gap-2 text-sm text-slate-500">' + icon('loader', 'spin') + 'フレーズを考えています…</div>';
+      else if (!sg.list.length && sg.note && sg.note !== 'none') body = '<div class="mt-3 text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-xl p-3 leading-relaxed"><b>AI に接続できませんでした</b><br>' + esc(sg.note.replace(/^AI提案に失敗したため内蔵辞書から提案しました（|）$/g, '')) + '<br><span class="text-xs text-rose-700">設定タブの「接続テスト」で詳しい状態を確認できます。</span></div>';
+      else if (!sg.list.length) body = '<div class="mt-3 text-sm text-slate-600 bg-slate-50 rounded-xl p-3 leading-relaxed">「' + esc(sg.q) + '」に合うフレーズが内蔵辞書に見つかりませんでした。<br><span class="text-xs text-slate-500">内蔵辞書は「断りたい」「催促したい」「褒めたい」「話題を変えたい」などの定番の場面に対応しています。設定で Gemini キーを登録すると、どんなイメージからでも提案できます。</span></div>';
+      else body = '<div class="mt-3 space-y-2.5">' + sg.list.map(function (x, i) {
+          var reg = findPhrase(x.p);
+          return '<div class="rounded-2xl border border-slate-200 bg-white p-3.5 fade-up" style="animation-delay:' + (i * 60) + 'ms">' +
+            '<div class="flex items-start gap-3">' +
+              '<div class="flex-1 min-w-0">' +
+                '<div class="flex flex-wrap items-center gap-2"><span class="text-[17px] font-bold text-slate-900 break-words">' + esc(x.p) + '</span>' + catBadge(x.c) + '</div>' +
+                (x.ja ? '<div class="text-sm text-slate-600">' + esc(x.ja) + '</div>' : '') +
+                (x.n ? '<div class="mt-1 text-xs text-slate-500">💡 ' + esc(x.n) + '</div>' : '') +
+                (x.en ? '<div class="mt-2 rounded-xl bg-slate-50 px-3 py-2"><div class="text-[14px] text-slate-800">' + highlight(x.en, x.p) + '</div>' + (x.eja ? '<div class="text-xs text-slate-500 mt-0.5">' + esc(x.eja) + '</div>' : '') + '</div>' : '') +
+              '</div>' +
+              '<div class="flex flex-col gap-1.5 shrink-0">' +
+                (reg
+                  ? '<button data-a="use" data-id="' + reg.id + '" class="h-9 px-3 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">' + icon('check') + '登録済み</button>'
+                  : '<button data-a="sug-reg" data-i="' + i + '" class="h-9 px-3.5 rounded-xl text-sm font-semibold bg-slate-900 text-white inline-flex items-center gap-1">' + icon('plus') + '登録</button>') +
+                (x.en ? '<button data-a="sug-say" data-i="' + i + '" class="h-9 px-3 rounded-xl text-xs text-slate-600 hover:bg-slate-100 inline-flex items-center gap-1">' + icon('volume') + '再生</button>' : '') +
+              '</div>' +
+            '</div></div>';
+        }).join('') + '</div>';
+      if (sg.list.length && sg.note && sg.note !== 'none') body += '<p class="mt-2 text-[11px] text-amber-700">' + esc(sg.note) + '</p>';
+    }
+    return '<section class="' + card + ' p-4 sm:p-5">' +
+      '<label class="flex items-center gap-2 text-sm font-bold text-slate-900"><span class="w-7 h-7 rounded-lg bg-amber-100 text-amber-600 grid place-items-center">' + icon('bulb') + '</span>作成したいフレーズのイメージを入力して下さい</label>' +
+      '<div class="mt-3 flex gap-2">' +
+        '<input data-in="idea" value="' + esc(S.idea) + '" placeholder="例：やんわり断りたい／進捗を催促したい" class="' + inputCls + '" enterkeyhint="go">' +
+        '<button data-a="suggest" class="shrink-0 h-[50px] px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-semibold inline-flex items-center gap-1.5 shadow-sm active:scale-95 transition"' + (sg && sg.loading ? ' disabled' : '') + '>' + icon('sparkles') + '<span>提案</span></button>' +
+      '</div>' +
+      '<p class="mt-1.5 text-[11px] text-slate-400">' + (useAI() ? 'Gemini がイメージに合うフレーズを3つ提案します' : '内蔵辞書から提案します（Gemini キーを設定すると自由なイメージに対応）') + '</p>' +
+      body + '</section>';
+  }
+
+  function renderPhrases() {
+    var active = activePhrases(), arch = archivedPhrases();
+    var counts = countBy(active); counts.archive = arch.length;
+    var list = S.phraseCat === 'archive' ? arch : active.filter(function (p) { return S.phraseCat === 'all' || p.c === S.phraseCat; });
+    var body;
+    if (!list.length) body = '<div class="text-center text-sm text-slate-500 py-10">' + (S.phraseCat === 'archive' ? 'アーカイブしたフレーズはまだありません。マスターしたフレーズの 📦 ボタンを押すとここに移動します' : '該当するフレーズがありません') + '</div>';
+    else if (settings.grouped && S.phraseCat === 'all') {
+      body = CATS.map(function (c) {
+        var items = list.filter(function (p) { return p.c === c.k; });
+        if (!items.length) return '';
+        return '<section class="mb-5"><div class="flex items-center gap-2 mb-2 px-1"><span class="w-2 h-2 rounded-full ' + c.dot + '"></span><h3 class="text-sm font-bold text-slate-800">' + c.l + '</h3><span class="text-xs text-slate-400">' + items.length + '</span></div>' +
+          '<div class="grid gap-2 sm:grid-cols-2">' + items.map(phraseRow).join('') + '</div></section>';
+      }).join('');
+    } else body = '<div class="grid gap-2 sm:grid-cols-2">' + list.map(phraseRow).join('') + '</div>';
+
+    view.innerHTML =
+      (S.showForm ? formHTML() : '') +
+      ideaPanelHTML() +
+      '<div class="mt-5 flex items-center justify-between gap-2">' +
+        '<h2 class="text-sm font-bold text-slate-800 px-1">フレーズ集</h2>' +
+        '<div class="flex gap-2">' +
+        '<button data-a="toggle-group" class="h-10 px-3 rounded-xl border text-sm font-medium inline-flex items-center gap-1.5 ' + (settings.grouped ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200') + '" title="カテゴリー別に表示">' + icon('layers') + '<span class="hidden sm:inline">グループ</span></button>' +
+        '<button data-a="open-form" class="h-10 px-3 rounded-xl bg-slate-900 text-white text-sm font-medium inline-flex items-center gap-1.5">' + icon('plus') + '<span class="hidden sm:inline">手動で追加</span></button>' +
+      '</div></div>' +
+      chipsHTML('phrase-cat', S.phraseCat, counts, true) +
+      (function () {
+        var all = active, pr = all.filter(function (p) { return doneDays(p.p).length; }).length;
+        var td = all.filter(function (p) { return doneToday(p.p); }).length;
+        return '<div class="mt-2 flex items-center gap-3 text-xs text-slate-500 px-1"><span>' + DONE_MARK + ' 練習済み <b class="text-slate-800">' + pr + '</b> / ' + all.length + '</span><span>今日 <b class="text-slate-800">' + td + '</b> フレーズ</span>' + (arch.length ? '<span>📦 マスター <b class="text-slate-800">' + arch.length + '</b></span>' : '') +
+          '<div class="flex-1 h-1.5 rounded-full bg-slate-200 overflow-hidden"><div class="h-full bg-emerald-500 rounded-full" style="width:' + (all.length ? Math.round(pr / all.length * 100) : 0) + '%"></div></div></div>';
+      })() +
+      '<p class="mt-1 mb-3 text-xs text-slate-400 px-1">' + (S.phraseCat === 'archive' ? '「戻す」で元のカテゴリーに戻ります' : 'タップで例文を作成 ・ 📦 でマスター済みとしてアーカイブ') + '</p>' +
+      body;
+  }
+
+  /* ================================================================
+     描画：お気に入りタブ
+  ================================================================ */
+  function renderFavorites() {
+    var counts = countBy(favs);
+    var list = favs.filter(function (f) { return S.favCat === 'all' || f.c === S.favCat; });
+    view.innerHTML =
+      '<div class="flex items-center justify-between"><h2 class="text-lg font-bold text-slate-900">お気に入り例文</h2><span class="text-sm text-slate-400">' + favs.length + '件</span></div>' +
+      chipsHTML('fav-cat', S.favCat, counts) +
+      '<div class="mt-3 space-y-3">' +
+      (list.length ? list.map(function (f) {
+        var key = 'f:' + f.id;
+        return '<article class="bg-white rounded-2xl border ' + (T.key === key ? 'border-slate-400 ring-2 ring-slate-200' : 'border-slate-200') + ' shadow-sm p-4">' +
+          '<div class="flex flex-wrap items-center gap-1.5 mb-2">' + catBadge(f.c) + '<span class="text-[11px] text-slate-500">' + esc(f.phrase || '') + '</span></div>' +
+          exampleTextHTML(f, f.phrase, key) +
+          (f.ja ? '<p class="mt-1.5 text-sm text-slate-500 whitespace-pre-line break-words">' + esc(f.ja) + '</p>' : '') +
+          '<div class="mt-2 flex items-center justify-between"><span class="text-[11px] text-slate-400">' + new Date(f.at).toLocaleDateString('ja-JP') + '</span><div class="flex gap-1">' +
+            '<button data-a="fspeak" data-id="' + f.id + '" class="' + btnGhost + '">' + icon('volume') + '</button>' +
+            talkBtnHTML(key) +
+            '<button data-a="fdel" data-id="' + f.id + '" class="' + btnGhost + ' hover:text-rose-600">' + icon('trash') + '</button>' +
+          '</div></div>' + talkPanelHTML(key) + '</article>';
+      }).join('') : '<div class="rounded-3xl border border-dashed border-slate-300 p-8 text-center"><div class="mx-auto w-10 h-10 rounded-2xl bg-white border border-slate-200 grid place-items-center text-amber-500">' + icon('star') + '</div><p class="mt-3 text-sm text-slate-600">例文の「保存」をタップするとここに集まります</p></div>') +
+      '</div>';
+  }
+
+  /* ================================================================
+     描画：設定タブ
+  ================================================================ */
+  function section(title, ic, inner) {
+    return '<section class="' + card + ' p-4 sm:p-6"><h2 class="flex items-center gap-2 font-bold text-slate-900 mb-4"><span class="w-8 h-8 rounded-xl bg-slate-100 text-slate-700 grid place-items-center">' + icon(ic) + '</span>' + title + '</h2>' + inner + '</section>';
+  }
+  function renderSettings() {
+    if (S.tab !== 'settings') return;
+    var voices = getVoices().filter(function (v) { return /^en/i.test(v.lang); });
+    var ai = section('AI 例文生成（Gemini）', 'key',
+      '<label class="text-xs font-semibold text-slate-500">Gemini API キー</label>' +
+      '<div class="mt-1 flex gap-2"><input data-in="apiKey" type="' + (S.showKey ? 'text' : 'password') + '" value="' + esc(settings.apiKey) + '" placeholder="AIza..." class="' + inputCls + '" autocomplete="off" autocapitalize="off" spellcheck="false">' +
+      '<button data-a="toggle-key" class="shrink-0 w-12 rounded-2xl border border-slate-200 grid place-items-center text-slate-500">' + icon('eye') + '</button></div>' +
+      '<p class="mt-1.5 text-[11px] text-slate-500 leading-relaxed">キーはこの端末の localStorage にのみ保存され、Google の API 以外には送信されません。Google AI Studio で無料発行できます。</p>' +
+      '<div class="mt-3 grid sm:grid-cols-2 gap-3">' +
+        '<div><label class="text-xs font-semibold text-slate-500">モデル名</label><input data-in="model" value="' + esc(settings.model) + '" class="mt-1 ' + inputCls + '" autocapitalize="off" spellcheck="false"></div>' +
+        '<div><label class="text-xs font-semibold text-slate-500">生成エンジン</label><select data-in="engine" class="mt-1 ' + inputCls + '">' +
+          '<option value="auto"' + (settings.engine === 'auto' ? ' selected' : '') + '>自動（キーがあれば AI）</option>' +
+          '<option value="local"' + (settings.engine === 'local' ? ' selected' : '') + '>内蔵エンジンのみ</option></select></div>' +
+      '</div>' +
+      '<div class="mt-3 flex flex-wrap items-center gap-2"><button data-a="test-ai" class="' + btnGhost + ' border border-slate-200"' + (S.aiTest === 'testing' ? ' disabled' : '') + '>' + (S.aiTest === 'testing' ? icon('loader', 'spin') + '接続テスト中…' : icon('check') + '接続テスト') + '</button>' +
+        '<button data-a="auto-model" class="' + btnGhost + ' border border-slate-200">' + icon('refresh') + '使えるモデルを自動選択</button></div>' +
+      (S.aiTest && S.aiTest !== 'testing' ? '<p class="mt-2 text-xs rounded-xl px-3 py-2 ' + (S.aiTest.ok ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200') + '">' + esc(S.aiTest.msg) + '</p>' : '') +
+      '<p class="mt-3 text-xs text-slate-600 bg-slate-50 rounded-xl p-3 leading-relaxed">AI には各フレーズの<b>用法（品詞）</b>を明示して渡し、返ってきた例文も検証します（例：「In conclusion」が主語として使われた文は破棄）。不合格・通信エラー時は内蔵エンジンが自動で補完します。</p>');
+
+    var voice = section('音声読み上げ', 'volume',
+      '<label class="text-xs font-semibold text-slate-500">音声</label>' +
+      '<select data-in="voice" class="mt-1 ' + inputCls + '"><option value="">自動（英語 US）</option>' +
+        voices.map(function (v) { return '<option value="' + esc(v.voiceURI) + '"' + (settings.voice === v.voiceURI ? ' selected' : '') + '>' + esc(v.name) + ' (' + esc(v.lang) + ')</option>'; }).join('') +
+      '</select>' +
+      '<div class="mt-3 flex items-center gap-3"><label class="text-xs font-semibold text-slate-500 shrink-0">速度</label>' +
+      '<input data-in="rate" type="range" min="0.6" max="1.3" step="0.05" value="' + settings.rate + '" class="flex-1 accent-slate-900">' +
+      '<span id="rateVal" class="text-sm tabular-nums text-slate-600 w-10 text-right">' + Number(settings.rate).toFixed(2) + '</span></div>' +
+      '<button data-a="test-voice" class="mt-3 ' + btnGhost + ' border border-slate-200">' + icon('volume') + '試聴する</button>');
+
+    var sync = section('Googleスプレッドシート同期', 'link',
+      '<label class="text-xs font-semibold text-slate-500">公開 CSV の URL</label>' +
+      '<input data-in="sheetUrl" value="' + esc(settings.sheetUrl) + '" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv" class="mt-1 ' + inputCls + '" autocapitalize="off" spellcheck="false">' +
+      '<div class="mt-3 flex bg-slate-100 rounded-2xl p-1">' +
+        [['replace', '置き換え'], ['merge', '追加（重複除外）']].map(function (m) { var a = settings.sheetMode === m[0]; return '<button data-a="sheet-mode" data-mode="' + m[0] + '" class="flex-1 py-2 rounded-xl text-sm font-medium ' + (a ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500') + '">' + m[1] + '</button>'; }).join('') +
+      '</div>' +
+      '<button data-a="sync" ' + (S.syncing ? 'disabled' : '') + ' class="mt-3 w-full h-12 rounded-2xl bg-slate-900 text-white font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-60">' + (S.syncing ? icon('loader', 'spin') + '同期中…' : icon('refresh') + '今すぐ同期') + '</button>' +
+      '<p class="mt-2 text-xs text-slate-500">シート由来：<b>' + sheet.length + '</b>件' + (settings.lastSync ? ' ・ 最終同期 ' + new Date(settings.lastSync).toLocaleString('ja-JP') : '') + '</p>' +
+      '<details class="mt-3 text-xs text-slate-600 bg-slate-50 rounded-xl p-3"><summary class="font-semibold cursor-pointer">シートの作り方</summary>' +
+        '<ol class="mt-2 list-decimal pl-4 space-y-1 leading-relaxed"><li>1行目に見出し <code class="bg-white px-1 rounded">phrase, meaning, category</code>（または「フレーズ, 意味, カテゴリ」）</li>' +
+        '<li>category は「' + CATS.map(function (c) { return c.l; }).join('／') + '」。空欄なら自動分類</li>' +
+        '<li>任意で4列目 <code class="bg-white px-1 rounded">type</code>（opener, stem_that, ing など）も指定可</li>' +
+        '<li>「ファイル → 共有 → ウェブに公開」で形式を <b>CSV</b> にして URL をコピー</li></ol></details>');
+
+    var data = section('データ管理', 'download',
+      '<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center mb-4">' +
+        [['マイフレーズ', custom.length], ['シート', sheet.length], ['お気に入り', favs.length], ['練習済み', Object.keys(done).length]].map(function (x) { return '<div class="rounded-2xl bg-slate-50 py-3"><div class="text-xl font-bold text-slate-900">' + x[1] + '</div><div class="text-[11px] text-slate-500">' + x[0] + '</div></div>'; }).join('') +
+      '</div>' +
+      '<div class="flex flex-wrap gap-2">' +
+        '<button data-a="export" class="' + btnGhost + ' border border-slate-200">' + icon('download') + 'バックアップ(JSON)</button>' +
+        '<button data-a="clear-custom" class="' + btnGhost + ' border border-slate-200 hover:text-rose-600">' + icon('trash') + 'マイフレーズ削除</button>' +
+        '<button data-a="clear-sheet" class="' + btnGhost + ' border border-slate-200 hover:text-rose-600">' + icon('trash') + 'シート分削除</button>' +
+        '<button data-a="clear-favs" class="' + btnGhost + ' border border-slate-200 hover:text-rose-600">' + icon('trash') + 'お気に入り削除</button>' +
+        '<button data-a="clear-done" class="' + btnGhost + ' border border-slate-200 hover:text-rose-600">' + icon('trash') + '練習記録削除</button>' +
+      '</div>');
+
+    view.innerHTML = '<div class="space-y-4">' + ai + voice + sync + data + '<p class="text-center text-[11px] text-slate-400 py-2">Phrase Trainer ・ データはすべてこの端末に保存されます</p></div>';
+  }
+
+  function render() {
+    renderNav(); renderBadge();
+    if (S.tab === 'generate') renderGenerate();
+    else if (S.tab === 'phrases') renderPhrases();
+    else if (S.tab === 'favorites') renderFavorites();
+    else renderSettings();
+  }
+
+  /* ================================================================
+     操作
+  ================================================================ */
+  function byId(id) { return allPhrases().filter(function (p) { return p.id === id; })[0]; }
+  function usePhrase(p, auto) {
+    S.input = p.p; S.selectedId = p.id; S.tab = 'generate'; S.results = []; S.meta = null;
+    render(); window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (auto) generate();
+  }
+  function saveForm() {
+    var f = S.form, p = f.p.trim();
+    if (!p) { toast('英語フレーズを入力してください'); return; }
+    var dup = findPhrase(p);
+    if (dup && dup.id !== S.editId) { toast('同じフレーズが既に登録されています'); return; }
+    var item = { p: p, ja: f.ja.trim(), c: f.c === 'auto' ? classifyCategory(p) : f.c, t: f.t === 'auto' ? detectType(p) : f.t, src: 'custom' };
+    if (S.editId) {
+      custom = custom.map(function (x) { return x.id === S.editId ? Object.assign({}, x, item) : x; });
+      toast('更新しました');
+    } else {
+      item.id = uid(); custom.unshift(item);
+      toast('「' + CAT[item.c].l + '」に追加しました');
+    }
+    saveCustom();
+    S.showForm = false; S.editId = null; S.form = { p: '', ja: '', c: 'auto', t: 'auto' };
+    renderPhrases();
+  }
+  function download(name, text) {
+    var blob = new Blob([text], { type: 'application/json' });
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-a]'); if (!b) return;
+    var a = b.getAttribute('data-a'), id = b.getAttribute('data-id'), idx = +b.getAttribute('data-i');
+    switch (a) {
+      case 'tab': talkReset(); S.tab = b.getAttribute('data-tab'); render(); window.scrollTo(0, 0); break;
+      case 'gen-cat': S.genCat = b.getAttribute('data-cat'); renderGenerate(); break;
+      case 'phrase-cat': S.phraseCat = b.getAttribute('data-cat'); renderPhrases(); break;
+      case 'fav-cat': S.favCat = b.getAttribute('data-cat'); renderFavorites(); break;
+      case 'suggest': suggestPhrases(); break;
+      case 'sug-reg': registerSuggestion(idx); break;
+      case 'sug-say': if (S.sug && S.sug.list[idx]) speak(S.sug.list[idx].en); break;
+      case 'archive':
+        var ap = byId(id); if (!ap) break;
+        archived[doneKey(ap.p)] = Date.now(); saveArchived();
+        if (S.selectedId === ap.id) S.selectedId = null;
+        renderPhrases(); toast('📦 マスター！「' + ap.p + '」をアーカイブしました');
+        break;
+      case 'unarchive':
+        var up2 = byId(id); if (!up2) break;
+        delete archived[doneKey(up2.p)]; saveArchived();
+        renderPhrases(); toast('「' + CAT[up2.c].l + '」に戻しました');
+        break;
+      case 'pick-random':
+        var pool = activePhrases().filter(function (x) { return x.id !== S.selectedId; });
+        if (!pool.length) break;
+        var rp = pool[Math.floor(Math.random() * pool.length)];
+        S.input = rp.p; S.selectedId = rp.id; renderGenerate();
+        var box = document.getElementById('pickBox'), sel = box && box.querySelector('[data-id="' + rp.id + '"]');
+        if (box && sel) box.scrollTop = Math.max(0, sel.offsetTop - box.clientHeight / 2 + sel.offsetHeight / 2);
+        toast('🎲 ' + rp.p);
+        break;
+      case 'pick': var p = byId(id); if (p) { S.input = p.p; S.selectedId = p.id; renderGenerate(); } break;
+      case 'clear-input': S.input = ''; S.selectedId = null; renderGenerate(); var inp = $('#phraseInput'); if (inp) inp.focus(); break;
+      case 'tone': S.tone = b.getAttribute('data-tone'); settings.tone = S.tone; saveSettings(); renderGenerate(); break;
+      case 'generate': generate(); break;
+      case 'quick-add':
+        var raw = S.input.trim(); if (!raw) break;
+        var item = { id: uid(), p: raw, ja: '', c: classifyCategory(raw), t: detectType(raw), src: 'custom' };
+        custom.unshift(item); saveCustom(); S.selectedId = item.id;
+        toast('「' + CAT[item.c].l + '」に登録しました'); renderGenerate(); break;
+      case 'speak': if (S.results[idx]) speak(S.results[idx].en); break;
+      case 'talk':
+        var tk = b.getAttribute('data-key');
+        if (T.key === tk && T.phase === 'listening') talkFinish(); else talkStart(tk);
+        break;
+      case 'talk-done': talkFinish(); break;
+      case 'talk-cancel': talkReset(); rerenderTalk(); break;
+      case 'talk-type':
+        T.typing = true; T.typed = (T.final + ' ' + T.interim).trim();
+        if (T.rec) { var rr = T.rec; T.rec = null; try { rr.abort(); } catch (x) {} }
+        T.listening = false; rerenderTalk();
+        setTimeout(function () { var ta = document.querySelector('[data-in="talk-typed"]'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }, 30);
+        break;
+      case 'talk-say':
+        if (T.result) speak(b.getAttribute('data-text') === 'fix' ? T.result.corrected : T.said);
+        break;
+      case 'copy-all': copyText(S.results.map(function (r, i) { return (i + 1) + '. ' + r.en + (r.ja && !r.hint ? '\n   ' + r.ja : ''); }).join('\n')); break;
+      case 'fav': if (S.results[idx]) { toggleFav(S.results[idx]); var res = $('#results'); if (res) res.innerHTML = resultsHTML(); } break;
+      case 'use': var up = byId(id); if (up) usePhrase(up, true); break;
+      case 'edit': var ep = byId(id); if (ep) { S.editId = id; S.form = { p: ep.p, ja: ep.ja || '', c: ep.c, t: ep.t }; S.showForm = true; renderPhrases(); window.scrollTo({ top: 0, behavior: 'smooth' }); } break;
+      case 'del': var dp = byId(id); if (dp && confirm('「' + dp.p + '」を削除しますか？')) { custom = custom.filter(function (x) { return x.id !== id; }); saveCustom(); renderPhrases(); toast('削除しました'); } break;
+      case 'open-form': S.showForm = true; S.editId = null; S.form = { p: '', ja: '', c: 'auto', t: 'auto' }; renderPhrases(); setTimeout(function () { var i = document.querySelector('[data-in="form-p"]'); if (i) i.focus(); }, 50); break;
+      case 'close-form': S.showForm = false; S.editId = null; renderPhrases(); break;
+      case 'save-form': saveForm(); break;
+      case 'toggle-group': settings.grouped = !settings.grouped; saveSettings(); renderPhrases(); break;
+      case 'fspeak': var f1 = favs.filter(function (f) { return f.id === id; })[0]; if (f1) speak(f1.en); break;
+      case 'fcopy': var f2 = favs.filter(function (f) { return f.id === id; })[0]; if (f2) copyText(f2.en + (f2.ja ? '\n' + f2.ja : '')); break;
+      case 'fdel': if (T.key === 'f:' + id) talkReset(); favs = favs.filter(function (f) { return f.id !== id; }); saveFavs(); renderNav(); renderFavorites(); toast('削除しました'); break;
+      case 'toggle-key': S.showKey = !S.showKey; renderSettings(); break;
+      case 'test-ai':
+        if (!settings.apiKey) { toast('先に API キーを入力してください'); break; }
+        S.aiTest = 'testing'; renderSettings();
+        geminiJSON('Reply with this JSON only: {"ok": true}').then(function () {
+          S.aiTest = { ok: true, msg: '✓ 接続成功：モデル「' + settings.model + '」で AI が使えます' };
+        }).catch(function (e) {
+          S.aiTest = { ok: false, msg: '✗ ' + (e && e.message ? e.message : '接続に失敗しました') };
+        }).then(function () { renderSettings(); });
+        break;
+      case 'auto-model':
+        if (!settings.apiKey) { toast('先に API キーを入力してください'); break; }
+        S.aiTest = 'testing'; renderSettings();
+        pickModel().then(function (m) {
+          settings.model = m; saveSettings();
+          S.aiTest = { ok: true, msg: '✓ モデル「' + m + '」を設定しました' };
+        }).catch(function (e) {
+          S.aiTest = { ok: false, msg: '✗ ' + (e && e.message ? e.message : '取得に失敗しました') };
+        }).then(function () { renderSettings(); });
+        break;
+      case 'test-voice': speak('Hello! This is how example sentences will sound in Phrase Trainer.'); break;
+      case 'sheet-mode': settings.sheetMode = b.getAttribute('data-mode'); saveSettings(); renderSettings(); break;
+      case 'sync': syncSheet(); break;
+      case 'export': download('phrase-trainer-backup-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify({ custom: custom, sheet: sheet, favorites: favs, practice: done, archived: archived, exportedAt: new Date().toISOString() }, null, 2)); break;
+      case 'clear-custom': if (confirm('マイフレーズをすべて削除しますか？')) { custom = []; saveCustom(); renderSettings(); toast('削除しました'); } break;
+      case 'clear-sheet': if (confirm('シートから読み込んだフレーズを削除しますか？')) { sheet = []; saveSheet(); renderSettings(); toast('削除しました'); } break;
+      case 'clear-done': if (confirm('練習記録（Done）をすべて削除しますか？')) { done = {}; saveDone(); renderSettings(); toast('削除しました'); } break;
+      case 'done':
+        if (!S.meta || !S.meta.phrase) break;
+        var added = toggleDoneToday(S.meta.phrase.core);
+        var rs = $('#results'); if (rs) rs.innerHTML = resultsHTML();
+        toast(added ? DONE_MARK + ' 今日の練習を記録しました（累計 ' + doneDays(S.meta.phrase.core).length + '日）' : '今日の記録を取り消しました');
+        break;
+      case 'clear-favs': if (confirm('お気に入りをすべて削除しますか？')) { favs = []; saveFavs(); renderNav(); renderSettings(); toast('削除しました'); } break;
+    }
+  });
+
+  document.addEventListener('input', function (e) {
+    var el = e.target, k = el.getAttribute && el.getAttribute('data-in'); if (!k) return;
+    var v = el.value;
+    if (k === 'input') {
+      S.input = v;
+      if (S.selectedId) { var sp = byId(S.selectedId); if (!sp || sp.p !== v) S.selectedId = null; }
+      var di = $('#detectInfo'); if (di) di.innerHTML = detectInfoHTML();
+      var cb = $('#clearBtn'); if (cb) cb.classList.toggle('hidden', !v);
+    } else if (k === 'talk-typed') {
+      T.typed = v;
+    } else if (k === 'idea') {
+      S.idea = v;
+    } else if (k.indexOf('form-') === 0) {
+      S.form[k.slice(5)] = v;
+      if (k === 'form-p') {
+        var ac = $('#autoCat'), at = $('#autoType');
+        if (ac) ac.innerHTML = '自動判定：<b>' + esc(v.trim() ? CAT[classifyCategory(v)].l : '—') + '</b>';
+        if (at) at.innerHTML = '自動判定：<b>' + esc(v.trim() ? TYPES[detectType(v)] : '—') + '</b>';
+      }
+    } else if (k === 'rate') {
+      settings.rate = parseFloat(v); saveSettings(); var rv = $('#rateVal'); if (rv) rv.textContent = settings.rate.toFixed(2);
+    } else if (k === 'apiKey' || k === 'model' || k === 'sheetUrl') {
+      settings[k] = v.trim(); saveSettings();
+    } else if (k === 'engine' || k === 'voice') {
+      settings[k] = v; saveSettings();
+    }
+  });
+  document.addEventListener('change', function (e) {
+    var k = e.target.getAttribute && e.target.getAttribute('data-in');
+    if (k === 'engine' || k === 'voice') { settings[k] = e.target.value; saveSettings(); }
+  });
+  document.addEventListener('keydown', function (e) {
+    var k = e.target.getAttribute && e.target.getAttribute('data-in');
+    if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) {
+      if (k === 'input') { e.preventDefault(); e.target.blur(); generate(); }
+      else if (k === 'idea') { e.preventDefault(); e.target.blur(); suggestPhrases(); }
+      else if (k === 'talk-typed' && !e.shiftKey) { e.preventDefault(); e.target.blur(); talkFinish(); }
+      else if (k === 'form-p' || k === 'form-ja') { e.preventDefault(); saveForm(); }
+    }
+  });
+
+  if ('speechSynthesis' in window) {
+    try { speechSynthesis.onvoiceschanged = function () { if (S.tab === 'settings') renderSettings(); }; } catch (e) {}
+  }
+
+  $('#logoIcon').innerHTML = icon('sparkles');
+  render();
+
+  // テスト用に公開（コンソールで確認可能）
+  window.ExpressFlow = { detectType: detectType, classifyCategory: classifyCategory, localGenerate: function (p, t) { return localGenerate(resolvePhrase(p), t || 'standard'); } };
+})();
+</script>
+</body>
+</html>
