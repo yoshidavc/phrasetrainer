@@ -36,6 +36,20 @@
   @keyframes micPulse { 0% { box-shadow: 0 0 0 0 rgba(244,63,94,.45); } 70% { box-shadow: 0 0 0 12px rgba(244,63,94,0); } 100% { box-shadow: 0 0 0 0 rgba(244,63,94,0); } }
   .mic-pulse { animation: micPulse 1.4s ease-out infinite; }
   .blank { display:inline-block; height:1.05em; vertical-align:-3px; border-radius:5px; background:#e2e8f0; margin:0 1px; }
+  .en-serif { font-family: Georgia, "Times New Roman", "Hiragino Mincho ProN", serif; }
+  .ck { cursor:pointer; border-radius:6px; padding:1px 3px; transition: box-shadow .15s; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  .ck:hover { box-shadow: 0 0 0 2px rgba(15,23,42,.08); }
+  .ck.sel { box-shadow: 0 0 0 2px #0f172a; }
+  .r-S { color:#1d4ed8; background:#eff6ff; font-weight:700; }
+  .r-V { color:#dc2626; background:#fef2f2; font-weight:700; }
+  .r-O { border-bottom:2.5px solid #10b981; border-radius:0; padding-bottom:1px; }
+  .r-C { border-bottom:2.5px solid #f97316; border-radius:0; padding-bottom:1px; }
+  .r-M { color:#0f766e; }
+  .r-M > .pr { color:#14b8a6; font-weight:600; }
+  .r-CONJ { color:#7c3aed; font-weight:700; }
+  .r-P { color:#334155; }
+  .rlab { display:block; font: 600 10px/1.2 -apple-system, sans-serif; letter-spacing:.02em; margin-top:2px; text-align:center; }
+  .slash { color:#a78bfa; font-weight:700; margin:0 4px; }
   mark.hl { background:#fef3c7; color:#0f172a; border-radius:4px; padding:0 2px; }
   #toast { transition: opacity .2s ease, transform .2s ease; }
 </style>
@@ -63,7 +77,7 @@
 </div>
 
 <nav class="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 safe-bottom">
-  <div class="grid grid-cols-4" id="navMobile"></div>
+  <div class="grid grid-cols-5" id="navMobile"></div>
 </nav>
 
 <div id="toast" class="fixed left-1/2 -translate-x-1/2 bottom-24 md:bottom-8 z-50 px-4 py-2.5 rounded-full bg-slate-900 text-white text-sm shadow-lg opacity-0 pointer-events-none" style="transform:translate(-50%,8px)"></div>
@@ -366,6 +380,7 @@
     archive: '<rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
     undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/>',
     bulb: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V16h8v-1.3A7 7 0 0 0 12 2z"/>',
+    scan: '<path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="16" r="3"/><path d="m20.2 18.2 2 2"/>',
     stop: '<rect x="6" y="6" width="12" height="12" rx="2.5"/>',
     keyboard: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M8 16h8"/>'
   };
@@ -1107,12 +1122,186 @@
       '</div></div>';
   }
 
+
+  /* ================================================================
+     構文解析（SVOC・品詞の色分け）
+  ================================================================ */
+  var ROLES = {
+    S:    { l: '主語',   en: 'S',  legend: '青・太字', box: 'bg-blue-50 text-blue-700 border-blue-200' },
+    V:    { l: '動詞',   en: 'V',  legend: '赤・太字', box: 'bg-red-50 text-red-700 border-red-200' },
+    O:    { l: '目的語', en: 'O',  legend: '緑の下線', box: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    C:    { l: '補語',   en: 'C',  legend: 'オレンジ下線', box: 'bg-orange-50 text-orange-700 border-orange-200' },
+    M:    { l: '修飾語', en: 'M',  legend: '（ ）カッコ', box: 'bg-teal-50 text-teal-700 border-teal-200' },
+    CONJ: { l: '接続詞', en: 'Conj', legend: '紫', box: 'bg-violet-50 text-violet-700 border-violet-200' },
+    P:    { l: '記号',   en: '', legend: '', box: 'bg-slate-50 text-slate-500 border-slate-200' }
+  };
+  var LABCOL = { S: '#1d4ed8', V: '#dc2626', O: '#059669', C: '#ea580c', M: '#0d9488', CONJ: '#7c3aed', P: '#94a3b8' };
+  var anaHist = LS.get('ef_ana_hist', []);
+  var A = { text: '', loading: false, res: null, err: '', sel: null, slash: false, labels: true, chunkJa: false };
+
+  function normRole(r) {
+    r = String(r || '').toUpperCase().replace(/[^A-Z]/g, '');
+    if (r === 'CONJUNCTION' || r === 'CONNECTOR' || r === 'CONJ') return 'CONJ';
+    if (/^O/.test(r)) return 'O';
+    if (/^C/.test(r) && r !== 'CONJ') return 'C';
+    if (/^S/.test(r)) return 'S';
+    if (/^V/.test(r)) return 'V';
+    if (r === 'P' || r === 'PUNCT' || r === 'PUNCTUATION') return 'P';
+    return 'M';
+  }
+  function cleanChunks(list, depth) {
+    return (Array.isArray(list) ? list : []).filter(function (c) { return c && String(c.text || '').trim(); }).map(function (c) {
+      var role = normRole(c.role);
+      if (/^[.,!?;:"'“”‘’()\-–—…]+$/.test(String(c.text).trim())) role = 'P';
+      return {
+        text: String(c.text).trim(), role: role, label: String(c.role || ''), pos: String(c.pos || ''), ja: String(c.ja || ''), note: String(c.note || ''),
+        children: depth < 2 && Array.isArray(c.children) && c.children.length > 1 ? cleanChunks(c.children, depth + 1) : null
+      };
+    });
+  }
+  function anaPrompt(text) {
+    return [
+      'You are an expert English grammarian who teaches Japanese learners using the Japanese school framework of 5 sentence patterns (5文型) and S/V/O/C/M analysis.',
+      'Analyze the following English text sentence by sentence.',
+      '',
+      'TEXT:',
+      '<<<' + text + '>>>',
+      '',
+      'For EACH sentence, split it into consecutive chunks (sense groups for slash reading) that together reproduce the sentence EXACTLY, in order, with no words added, dropped or changed. Put each punctuation mark at the end of the sentence as its own chunk with role "P".',
+      'Roles (use exactly these codes):',
+      '- "S": subject (whole noun phrase/clause)',
+      '- "V": the finite verb phrase including auxiliaries and negation (e.g. "can\'t overstate", "has been working"). If an adverb interrupts the verb, give the adverb its own "M" chunk.',
+      '- "O": object (direct or indirect; whole noun phrase/clause)',
+      '- "C": complement (subject or object complement)',
+      '- "M": modifier (adverbs, prepositional phrases, adverbial clauses, participial phrases, and adjectival phrases/relative clauses that do not belong inside an S/O/C chunk)',
+      '- "CONJ": conjunctions and connectors linking clauses (and, but, because, when, however, ...)',
+      '- "P": punctuation',
+      'Analyze the MAIN clause at the top level. Keep adjectives and relative clauses that modify a noun inside that noun\'s S/O/C chunk.',
+      'If an S/O/C/M chunk is itself a clause or a verbal phrase with its own structure (that-clause, wh-clause, if-clause, relative clause, to-infinitive or -ing phrase with an object, adverbial clause), add "children": the same kind of chunk list for that chunk\'s text, analyzed as its own mini-clause (children must also reproduce the chunk text exactly). Maximum nesting depth 2. For an inverted or fronted element (e.g. "how important X is", where "how important" is C), label it by its true grammatical role.',
+      '',
+      'For every chunk give: "text", "role", "pos" (short Japanese part-of-speech label such as 名詞句, 代名詞, 名詞節, 動詞句, 助動詞+動詞, 前置詞句, 副詞, 形容詞句, 不定詞句, 動名詞句, 分詞構文, 関係代名詞節, 副詞節, 接続詞), "ja" (short Japanese meaning of the chunk for slash reading), "note" (one short Japanese explanation of why it has this role, max 60 characters).',
+      'For every sentence give: "pattern" (e.g. "第3文型（SVO）"), "translation" (natural Japanese), "points" (1-3 short Japanese notes on key grammar such as inversion, emphasis, ellipsis, idioms).',
+      '',
+      'Return ONLY JSON:',
+      '{"sentences":[{"text":"...","pattern":"...","translation":"...","points":["..."],"chunks":[{"text":"...","role":"S","pos":"...","ja":"...","note":"...","children":[...]}]}]}'
+    ].join('\n');
+  }
+  function runAnalyze() {
+    var text = A.text.replace(/\s+/g, ' ').trim();
+    if (!text) { toast('英文を入力してください'); return; }
+    if (text.length > 2000) { toast('2000文字以内で入力してください'); return; }
+    if (!useAI()) { A.err = 'nokey'; A.res = null; renderAnalyze(); return; }
+    A.loading = true; A.err = ''; A.res = null; A.sel = null; renderAnalyze();
+    geminiJSON(anaPrompt(text), 0.1).then(function (o) {
+      var arr = (o && (o.sentences || o)) || [];
+      if (!Array.isArray(arr) || !arr.length) throw new Error('解析結果が空でした');
+      var res = { text: text, at: Date.now(), sentences: arr.map(function (s) {
+        return { text: String(s.text || ''), pattern: String(s.pattern || ''), translation: String(s.translation || ''), points: Array.isArray(s.points) ? s.points.map(String) : [], chunks: cleanChunks(s.chunks, 0) };
+      }).filter(function (s) { return s.chunks.length; }) };
+      if (!res.sentences.length) throw new Error('解析結果を読み取れませんでした');
+      A.res = res; A.loading = false;
+      anaHist = [res].concat(anaHist.filter(function (x) { return x.text !== text; })).slice(0, 20);
+      LS.set('ef_ana_hist', anaHist);
+      if (S.tab === 'analyze') { renderAnalyze(); var r = $('#anaResult'); if (r && window.innerWidth < 768) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    }).catch(function (e) {
+      A.loading = false; A.err = e && e.message ? e.message : '解析に失敗しました';
+      if (S.tab === 'analyze') renderAnalyze();
+    });
+  }
+  function chunkAt(path) {
+    var ps = path.split('.').map(Number), s = A.res.sentences[ps[0]], c = s.chunks[ps[1]];
+    for (var i = 2; i < ps.length && c; i++) c = c.children && c.children[ps[i]];
+    return c;
+  }
+  function chunkHTML(c, path, depth) {
+    var sel = A.sel === path ? ' sel' : '';
+    var inner;
+    if (c.children) inner = c.children.map(function (k, j) { return chunkHTML(k, path + '.' + j, depth + 1); }).join(' ');
+    else inner = esc(c.text);
+    if (c.role === 'M' && !c.children) inner = '<span class="pr">(</span>' + inner + '<span class="pr">)</span>';
+    else if (c.role === 'M' && c.children) inner = '<span class="pr">(</span> ' + inner + ' <span class="pr">)</span>';
+    var cls = 'ck r-' + c.role + sel;
+    if (c.children && (c.role === 'S' || c.role === 'V')) cls = 'ck ' + (c.role === 'S' ? 'r-O' : 'r-C') + sel; // 節の主語は下線枠で表示
+    if (c.children && c.role === 'S') cls += '" style="border-bottom-color:#3b82f6';
+    var span = '<span data-a="chunk" data-path="' + path + '" class="' + cls + '">' + inner + '</span>';
+    if (depth > 0 || !A.labels || c.role === 'P') return span;
+    var lab = (ROLES[c.role] ? (ROLES[c.role].en ? ROLES[c.role].en + ' ' : '') + ROLES[c.role].l : '') + (c.children ? '（節）' : '');
+    return '<span class="inline-block align-top mb-2" style="max-width:100%">' + span +
+      '<span class="rlab" style="color:' + LABCOL[c.role] + '">' + esc(lab) + (A.chunkJa && c.ja ? '<span class="block font-normal text-slate-500 mt-0.5">' + esc(c.ja) + '</span>' : '') + '</span></span>';
+  }
+  function sentenceHTML(s, si) {
+    var parts = [];
+    s.chunks.forEach(function (c, ci) {
+      if (ci > 0 && A.slash && c.role !== 'P') parts.push('<span class="slash">/</span>');
+      else if (ci > 0 && c.role !== 'P') parts.push(' ');
+      parts.push(chunkHTML(c, si + '.' + ci, 0));
+    });
+    var selC = A.sel && A.sel.split('.')[0] === String(si) ? chunkAt(A.sel) : null;
+    return '<article class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5">' +
+      '<div class="flex items-center justify-between gap-2 mb-3">' +
+        '<div class="flex items-center gap-2 min-w-0"><span class="w-6 h-6 rounded-full bg-slate-900 text-white text-xs font-semibold grid place-items-center shrink-0">' + (si + 1) + '</span>' +
+        (s.pattern ? '<span class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 truncate">' + esc(s.pattern) + '</span>' : '') + '</div>' +
+        '<button data-a="ana-say" data-i="' + si + '" class="' + btnGhost + '">' + icon('volume') + '<span class="text-xs">再生</span></button>' +
+      '</div>' +
+      '<div class="en-serif text-[19px] leading-[2.1] text-slate-900 break-words">' + parts.join('') + '</div>' +
+      (selC ? '<div class="mt-3 rounded-xl border p-3 fade-up ' + ROLES[selC.role].box + '">' +
+          '<div class="flex flex-wrap items-center gap-2"><span class="text-xs font-bold">' + (ROLES[selC.role].en ? ROLES[selC.role].en + '：' : '') + ROLES[selC.role].l + '</span>' + (selC.pos ? '<span class="text-[11px] px-2 py-0.5 rounded-full bg-white/70 border border-current/20">' + esc(selC.pos) + '</span>' : '') + '</div>' +
+          '<div class="mt-1 en-serif text-[16px] text-slate-900">' + esc(selC.text) + '</div>' +
+          (selC.ja ? '<div class="text-sm text-slate-700">' + esc(selC.ja) + '</div>' : '') +
+          (selC.note ? '<div class="mt-1 text-xs text-slate-600">💡 ' + esc(selC.note) + '</div>' : '') +
+          (selC.children ? '<div class="mt-1 text-[11px] text-slate-500">この部分は中にさらに S・V などを含む「節」です。中の色分けも確認しましょう。</div>' : '') +
+        '</div>' : '') +
+      (s.translation ? '<div class="mt-3 pt-3 border-t border-slate-100"><div class="text-[11px] font-semibold text-slate-400 mb-1">和訳</div><p class="text-[15px] leading-relaxed text-slate-700">' + esc(s.translation) + '</p></div>' : '') +
+      (s.points.length ? '<ul class="mt-2 space-y-1">' + s.points.map(function (pt) { return '<li class="flex gap-2 text-sm text-slate-600"><span class="text-amber-500 shrink-0">●</span><span>' + esc(pt) + '</span></li>'; }).join('') + '</ul>' : '') +
+      '</article>';
+  }
+  function legendHTML() {
+    return '<div class="grid grid-cols-2 sm:grid-cols-3 gap-2">' + ['S', 'V', 'O', 'C', 'M', 'CONJ'].map(function (k) {
+      var r = ROLES[k], sample = { S: '<span class="ck r-S">S</span>', V: '<span class="ck r-V">V</span>', O: '<span class="ck r-O">O</span>', C: '<span class="ck r-C">C</span>', M: '<span class="ck r-M"><span class="pr">(</span>M<span class="pr">)</span></span>', CONJ: '<span class="r-CONJ">/</span>' }[k];
+      return '<div class="flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ' + r.box + '"><span class="en-serif text-sm">' + sample + '</span><span class="font-semibold">' + r.l + '</span><span class="opacity-70">' + r.legend + '</span></div>';
+    }).join('') + '</div>';
+  }
+  function toggleBtn(action, on, label) {
+    return '<button data-a="' + action + '" class="h-9 px-3 rounded-xl text-xs font-semibold border transition ' + (on ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200') + '">' + label + '</button>';
+  }
+  function renderAnalyze() {
+    if (S.tab !== 'analyze') return;
+    var body = '';
+    if (A.loading) body = '<div class="space-y-3">' + [0, 1].map(function () { return '<div class="skeleton bg-white rounded-2xl border border-slate-200 p-5"><div class="h-5 bg-slate-200 rounded w-4/5"></div><div class="mt-3 h-5 bg-slate-100 rounded w-3/5"></div><div class="mt-4 h-3 bg-slate-100 rounded w-2/3"></div></div>'; }).join('') + '<p class="text-center text-xs text-slate-400">AI が文の構造を解析しています…</p></div>';
+    else if (A.err === 'nokey') body = '<div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">構文解析は AI（Gemini）を使います。設定タブで Gemini API キーを登録してください。<button data-a="tab" data-tab="settings" class="mt-2 block font-semibold underline">設定を開く</button></div>';
+    else if (A.err) body = '<div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><b>解析できませんでした</b><br>' + esc(A.err) + '<br><span class="text-xs">設定タブの「接続テスト」で状態を確認できます。</span></div>';
+    else if (A.res) {
+      var all = A.res.sentences.map(function (s) { return s.translation; }).filter(Boolean).join(' ');
+      body = '<div class="flex flex-wrap items-center gap-2 mb-3">' +
+          toggleBtn('ana-labels', A.labels, 'S/V 記号') + toggleBtn('ana-slash', A.slash, '／ スラッシュ') + toggleBtn('ana-ja', A.chunkJa, '語順訳') +
+          '<button data-a="ana-say" data-i="-1" class="' + btnGhost + ' ml-auto border border-slate-200">' + icon('volume') + '<span class="text-xs">全文を読み上げ</span></button>' +
+        '</div>' +
+        '<p class="mb-3 text-xs text-slate-400">色の付いた部分をタップすると、品詞と役割の説明が表示されます</p>' +
+        '<div class="space-y-3">' + A.res.sentences.map(sentenceHTML).join('') + '</div>' +
+        (A.res.sentences.length > 1 && all ? '<section class="mt-4 ' + card + ' p-4"><div class="text-xs font-semibold text-slate-500 mb-1">全文の和訳</div><p class="text-[15px] leading-relaxed text-slate-700">' + esc(all) + '</p></section>' : '');
+    }
+    view.innerHTML =
+      '<section class="' + card + ' p-4 sm:p-6">' +
+        '<label class="flex items-center gap-2 text-sm font-bold text-slate-900"><span class="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-600 grid place-items-center">' + icon('scan') + '</span>英文を入力（構造を解析します）</label>' +
+        '<textarea data-in="ana-text" rows="4" class="mt-3 ' + inputCls + ' en-serif leading-relaxed" placeholder="例：You actually can\'t overstate just how important good posture and tension-free playing is." autocapitalize="sentences" spellcheck="false">' + esc(A.text) + '</textarea>' +
+        '<div class="mt-1 flex justify-between text-[11px] text-slate-400"><span>複数の文もまとめて解析できます</span><span id="anaCount">' + A.text.length + ' / 2000</span></div>' +
+        '<button data-a="ana-run" ' + (A.loading ? 'disabled' : '') + ' class="mt-3 w-full inline-flex items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-lg font-bold shadow-lg shadow-indigo-600/20 active:scale-[.98] disabled:opacity-60 transition" style="min-height:60px">' +
+          (A.loading ? icon('loader', 'spin') + '解析中…' : icon('scan') + '構造解析を実行') + '</button>' +
+        (anaHist.length ? '<div class="mt-4"><div class="text-[11px] font-semibold text-slate-400 mb-1.5">最近の解析</div><div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">' +
+          anaHist.slice(0, 10).map(function (x, i) { return '<button data-a="ana-hist" data-i="' + i + '" class="shrink-0 max-w-[16rem] truncate px-3 py-1.5 rounded-full text-xs border border-slate-200 bg-white text-slate-600 hover:border-slate-400 en-serif">' + esc(x.text) + '</button>'; }).join('') +
+          '</div></div>' : '') +
+      '</section>' +
+      '<section class="mt-4">' + legendHTML() + '</section>' +
+      '<section id="anaResult" class="mt-4 scroll-mt-20">' + body + '</section>';
+  }
+
   /* ================================================================
      描画：共通パーツ
   ================================================================ */
   var TABS = [
     { k: 'generate', l: '例文作成', i: 'sparkles' },
     { k: 'phrases', l: 'フレーズ', i: 'list' },
+    { k: 'analyze', l: '構文解析', i: 'scan' },
     { k: 'favorites', l: 'お気に入り', i: 'star' },
     { k: 'settings', l: '設定', i: 'settings' }
   ];
@@ -1261,6 +1450,7 @@
         '<div class="mt-2 flex justify-end gap-1">' +
           '<button data-a="speak" data-i="' + i + '" class="' + btnGhost + '" aria-label="読み上げ">' + icon('volume') + '<span class="text-xs">再生</span></button>' +
           talkBtnHTML(key) +
+          '<button data-a="to-ana" data-i="' + i + '" class="' + btnGhost + '" aria-label="構文解析">' + icon('scan') + '<span class="text-xs">構文</span></button>' +
           '<button data-a="fav" data-i="' + i + '" class="' + btnGhost + (fav ? ' text-amber-500' : '') + '" aria-label="お気に入り">' + icon('star', '', fav) + '<span class="text-xs">' + (fav ? '保存済み' : '保存') + '</span></button>' +
         '</div>' + talkPanelHTML(key) + '</article>';
     }).join('') + '</div>' + doneBarHTML(m.phrase ? m.phrase.core : '');
@@ -1555,6 +1745,7 @@
     if (S.tab === 'generate') renderGenerate();
     else if (S.tab === 'phrases') renderPhrases();
     else if (S.tab === 'favorites') renderFavorites();
+    else if (S.tab === 'analyze') renderAnalyze();
     else renderSettings();
   }
 
@@ -1611,6 +1802,21 @@
         var up2 = byId(id); if (!up2) break;
         delete archived[doneKey(up2.p)]; saveArchived();
         renderPhrases(); toast('「' + CAT[up2.c].l + '」に戻しました');
+        break;
+      case 'ana-run': runAnalyze(); break;
+      case 'chunk': var pth = b.getAttribute('data-path'); A.sel = A.sel === pth ? null : pth; renderAnalyze(); e.stopPropagation(); break;
+      case 'ana-slash': A.slash = !A.slash; renderAnalyze(); break;
+      case 'ana-labels': A.labels = !A.labels; renderAnalyze(); break;
+      case 'ana-ja': A.chunkJa = !A.chunkJa; if (A.chunkJa) A.labels = true; renderAnalyze(); break;
+      case 'ana-say':
+        if (!A.res) break;
+        speak(idx < 0 ? A.res.text : (A.res.sentences[idx].text || A.res.sentences[idx].chunks.map(function (c) { return c.text; }).join(' ')));
+        break;
+      case 'ana-hist': var hx = anaHist[idx]; if (hx) { A.text = hx.text; A.res = hx; A.err = ''; A.sel = null; renderAnalyze(); } break;
+      case 'to-ana':
+        if (!S.results[idx]) break;
+        talkReset(); A.text = S.results[idx].en.replace(/^[AB]:\s*/gm, '').replace(/\n/g, ' '); A.res = null; A.err = ''; A.sel = null;
+        S.tab = 'analyze'; render(); window.scrollTo(0, 0); runAnalyze();
         break;
       case 'pick-random':
         var pool = activePhrases().filter(function (x) { return x.id !== S.selectedId; });
@@ -1705,6 +1911,8 @@
       var cb = $('#clearBtn'); if (cb) cb.classList.toggle('hidden', !v);
     } else if (k === 'talk-typed') {
       T.typed = v;
+    } else if (k === 'ana-text') {
+      A.text = v; var ac2 = $('#anaCount'); if (ac2) ac2.textContent = v.length + ' / 2000';
     } else if (k === 'idea') {
       S.idea = v;
     } else if (k.indexOf('form-') === 0) {
