@@ -656,7 +656,7 @@
     st = st || { retries: 0, tried: [] };
     var model = settings.model || 'gemini-2.5-flash';
     var gc = { temperature: temperature, responseMimeType: 'application/json' };
-    var tc = st.noThink ? null : thinkingCfg(model, settings.fast !== false);
+    var tc = st.noThink ? null : thinkingCfg(model, st.forceFast || settings.fast !== false);
     if (tc) gc.thinkingConfig = tc;
     return fetchT(GAPI + 'models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(settings.apiKey), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -698,8 +698,8 @@
     if (a >= 0 && b > a) { try { return JSON.parse(txt.slice(a, b + 1)); } catch (e) {} }
     throw gErr('parse', 'AI の回答を読み取れませんでした。もう一度お試しください');
   }
-  function geminiJSON(prompt, temperature) {
-    return geminiText(prompt, temperature == null ? 0.2 : temperature).then(parseJSONLoose);
+  function geminiJSON(prompt, temperature, opts) {
+    return geminiText(prompt, temperature == null ? 0.2 : temperature, opts ? { retries: 0, tried: [], forceFast: !!opts.fast } : null).then(parseJSONLoose);
   }
 
   function geminiGenerate(ph, tone) {
@@ -1149,7 +1149,7 @@
   };
   var LABCOL = { S: '#1d4ed8', V: '#dc2626', O: '#059669', C: '#ea580c', M: '#0d9488', CONJ: '#7c3aed', P: '#94a3b8' };
   var anaHist = LS.get('ef_ana_hist', []);
-  var A = { text: '', loading: false, res: null, err: '', sel: null, slash: false, labels: true, chunkJa: false, t0: 0, timer: null };
+  var A = { text: '', loading: false, res: null, err: '', sel: null, slash: false, labels: true, chunkJa: false, t0: 0, timer: null, req: 0, fullPending: false, full: null, fullErr: '' };
 
   function normRole(r) {
     r = String(r || '').toUpperCase().replace(/[^A-Z]/g, '');
@@ -1198,35 +1198,79 @@
       '{"sentences":[{"text":"...","pattern":"...","translation":"...","points":["..."],"chunks":[{"text":"...","role":"S","pos":"...","ja":"...","note":"...","children":[...]}]}]}'
     ].join('\n');
   }
+  function quickPrompt(text) {
+    return [
+      'Identify the sentence skeleton of the following English text for a Japanese learner. Be fast and concise.',
+      'TEXT: <<<' + text + '>>>',
+      'For EACH sentence, split it into consecutive chunks that reproduce the sentence EXACTLY in order (no words added, dropped or changed).',
+      'Roles: "S" subject (whole noun phrase/clause), "V" finite verb phrase incl. auxiliaries/negation, "O" object, "C" complement, "M" modifier (adverbs, prepositional phrases, adverbial clauses), "CONJ" conjunction/connector, "P" punctuation.',
+      'Analyze the main clause only (no nesting). Keep noun modifiers inside the noun chunk. Label fronted/inverted parts by their true role.',
+      'Also give "pattern" (e.g. "第3文型（SVO）").',
+      'Return ONLY JSON: {"sentences":[{"text":"...","pattern":"...","chunks":[{"text":"...","role":"S"}]}]}'
+    ].join('\n');
+  }
+  function toRes(o, text, quick) {
+    var arr = (o && (o.sentences || o)) || [];
+    if (!Array.isArray(arr) || !arr.length) throw new Error('解析結果が空でした');
+    var res = { text: text, at: Date.now(), quick: !!quick, sentences: arr.map(function (s) {
+      return { text: String(s.text || ''), pattern: String(s.pattern || ''), translation: String(s.translation || ''), points: Array.isArray(s.points) ? s.points.map(String) : [], chunks: cleanChunks(s.chunks, 0) };
+    }).filter(function (s) { return s.chunks.length; }) };
+    if (!res.sentences.length) throw new Error('解析結果を読み取れませんでした');
+    return res;
+  }
+  function saveHist(res) {
+    anaHist = [res].concat(anaHist.filter(function (x) { return x.text !== res.text; })).slice(0, 100);
+    LS.set('ef_ana_hist', anaHist);
+  }
+  function startTimer() {
+    clearInterval(A.timer);
+    A.timer = setInterval(function () {
+      if (!A.loading && !A.fullPending) { clearInterval(A.timer); return; }
+      var t = Math.floor((Date.now() - A.t0) / 1000) + '秒';
+      ['anaElapsed', 'anaElapsed2'].forEach(function (id) { var el = document.getElementById(id); if (el) el.textContent = t; });
+    }, 500);
+  }
+  function runFull(text, id) {
+    A.fullPending = true; A.full = null; A.fullErr = '';
+    geminiJSON(anaPrompt(text), 0.1).then(function (o) {
+      var res = toRes(o, text, false);
+      res.sec = Math.round((Date.now() - A.t0) / 1000);
+      saveHist(res);                       // 画面を離れていても記録は保存
+      if (id !== A.req) return;
+      A.fullPending = false;
+      if (!A.res || A.loading) {           // 簡易解析より先に届いた／簡易解析が失敗した
+        A.res = res; A.loading = false; A.err = ''; A.full = null;
+        if (S.tab === 'analyze') renderAnalyze();
+      } else {
+        A.full = res;                      // 「更新」ボタンで反映
+        if (S.tab === 'analyze') renderAnalyze(); else toast('✨ 詳しい構文解析ができました（構文解析タブで「更新」）');
+      }
+    }).catch(function (e) {
+      if (id !== A.req) return;
+      A.fullPending = false; A.fullErr = e && e.message ? e.message : '詳しい解析に失敗しました';
+      if (A.loading) { A.loading = false; A.err = A.fullErr; }
+      if (S.tab === 'analyze') renderAnalyze();
+    });
+  }
   function runAnalyze() {
     var text = A.text.replace(/\s+/g, ' ').trim();
     if (!text) { toast('英文を入力してください'); return; }
     if (text.length > 2000) { toast('2000文字以内で入力してください'); return; }
     var cached = anaHist.filter(function (x) { return x.text === text; })[0];
-    if (cached) { A.res = cached; A.err = ''; A.sel = null; renderAnalyze(); toast('保存済みの解析結果を表示しました'); return; }
+    if (cached) { A.req++; A.res = cached; A.err = ''; A.sel = null; A.full = null; A.fullPending = false; renderAnalyze(); toast('保存済みの解析結果を表示しました'); return; }
     if (!useAI()) { A.err = 'nokey'; A.res = null; renderAnalyze(); return; }
-    A.loading = true; A.err = ''; A.res = null; A.sel = null; A.t0 = Date.now(); renderAnalyze();
-    clearInterval(A.timer);
-    A.timer = setInterval(function () {
-      var el = document.getElementById('anaElapsed');
-      if (!A.loading) { clearInterval(A.timer); return; }
-      if (el) el.textContent = Math.floor((Date.now() - A.t0) / 1000) + '秒';
-    }, 500);
-    geminiJSON(anaPrompt(text), 0.1).then(function (o) {
-      var arr = (o && (o.sentences || o)) || [];
-      if (!Array.isArray(arr) || !arr.length) throw new Error('解析結果が空でした');
-      var res = { text: text, at: Date.now(), sentences: arr.map(function (s) {
-        return { text: String(s.text || ''), pattern: String(s.pattern || ''), translation: String(s.translation || ''), points: Array.isArray(s.points) ? s.points.map(String) : [], chunks: cleanChunks(s.chunks, 0) };
-      }).filter(function (s) { return s.chunks.length; }) };
-      if (!res.sentences.length) throw new Error('解析結果を読み取れませんでした');
-      res.sec = Math.round((Date.now() - A.t0) / 1000);
-      A.res = res; A.loading = false; clearInterval(A.timer);
-      anaHist = [res].concat(anaHist.filter(function (x) { return x.text !== text; })).slice(0, 100);
-      LS.set('ef_ana_hist', anaHist);
+    var id = ++A.req;
+    A.loading = true; A.err = ''; A.res = null; A.sel = null; A.full = null; A.fullErr = ''; A.t0 = Date.now();
+    runFull(text, id);                     // 詳しい解析（品詞・和訳・節の中身）をバックグラウンドで開始
+    renderAnalyze(); startTimer();
+    geminiJSON(quickPrompt(text), 0.1, { fast: true }).then(function (o) {   // 主語・動詞など骨組みだけを先に
+      if (id !== A.req || !A.loading) return;
+      A.res = toRes(o, text, true); A.loading = false;
       if (S.tab === 'analyze') { renderAnalyze(); var r = $('#anaResult'); if (r && window.innerWidth < 768) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
-    }).catch(function (e) {
-      A.loading = false; clearInterval(A.timer); A.err = e && e.message ? e.message : '解析に失敗しました';
-      if (S.tab === 'analyze') renderAnalyze();
+    }).catch(function () {
+      // 簡易解析が失敗しても、詳しい解析の結果を待つ（両方失敗したらエラー表示）
+      if (id !== A.req) return;
+      if (!A.fullPending && A.loading) { A.loading = false; A.err = A.fullErr || '解析に失敗しました'; renderAnalyze(); }
     });
   }
   function chunkAt(path) {
@@ -1270,6 +1314,7 @@
           '<div class="mt-1 en-serif text-[16px] text-slate-900">' + esc(selC.text) + '</div>' +
           (selC.ja ? '<div class="text-sm text-slate-700">' + esc(selC.ja) + '</div>' : '') +
           (selC.note ? '<div class="mt-1 text-xs text-slate-600">💡 ' + esc(selC.note) + '</div>' : '') +
+          (A.res.quick ? '<div class="mt-1 text-[11px] text-slate-500">品詞・意味の説明は、詳しい解析の完了後に表示されます。</div>' : '') +
           (selC.children ? '<div class="mt-1 text-[11px] text-slate-500">この部分は中にさらに S・V などを含む「節」です。中の色分けも確認しましょう。</div>' : '') +
         '</div>' : '') +
       (s.translation ? '<div class="mt-3 pt-3 border-t border-slate-100"><div class="text-[11px] font-semibold text-slate-400 mb-1">和訳</div><p class="text-[15px] leading-relaxed text-slate-700">' + esc(s.translation) + '</p></div>' : '') +
@@ -1297,6 +1342,8 @@
           toggleBtn('ana-labels', A.labels, 'S/V 記号') + toggleBtn('ana-slash', A.slash, '／ スラッシュ') + toggleBtn('ana-ja', A.chunkJa, '語順訳') +
           '<button data-a="ana-say" data-i="-1" class="' + btnGhost + ' ml-auto border border-slate-200">' + icon('volume') + '<span class="text-xs">全文を読み上げ</span></button>' +
         '</div>' +
+        (A.res.quick && A.fullPending ? '<div class="mb-3 flex items-center gap-2 rounded-xl bg-indigo-50 border border-indigo-200 px-3 py-2 text-xs text-indigo-800">' + icon('loader', 'spin') + '<span>主語・動詞を先に表示しています。品詞・和訳・節の中身をバックグラウンドで解析中… <span id="anaElapsed2" class="tabular-nums">' + Math.floor((Date.now() - A.t0) / 1000) + '秒</span></span></div>' : '') +
+        (A.res.quick && !A.fullPending && !A.full && A.fullErr ? '<div class="mb-3 flex items-center gap-2 rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-800"><span class="flex-1">詳しい解析に失敗しました（' + esc(A.fullErr) + '）</span><button data-a="ana-retry-full" class="font-semibold underline">再試行</button></div>' : '') +
         '<p class="mb-3 text-xs text-slate-400">色の付いた部分をタップすると、品詞と役割の説明が表示されます</p>' +
         '<div class="space-y-3">' + A.res.sentences.map(sentenceHTML).join('') + '</div>' +
         (A.res.sentences.length > 1 && all ? '<section class="mt-4 ' + card + ' p-4"><div class="text-xs font-semibold text-slate-500 mb-1">全文の和訳</div><p class="text-[15px] leading-relaxed text-slate-700">' + esc(all) + '</p></section>' : '');
@@ -1312,7 +1359,10 @@
       '</section>' +
       '<section class="mt-4">' + legendHTML() + '</section>' +
       '<section id="anaResult" class="mt-4 scroll-mt-20">' + body + '</section>' +
-      anaHistHTML();
+      anaHistHTML() +
+      (A.full && A.res && A.res.quick ? '<div class="fixed inset-x-0 bottom-24 md:bottom-8 z-40 flex justify-center px-4 pointer-events-none"><div class="pointer-events-auto fade-up flex items-center gap-3 rounded-2xl bg-slate-900 text-white shadow-2xl px-4 py-3 max-w-md w-full">' +
+        '<span class="text-xl">✨</span><div class="flex-1 min-w-0"><div class="text-sm font-bold">詳しい解析ができました</div><div class="text-[11px] text-white/70">品詞・和訳・節の中身（' + (A.full.sec || '') + '秒）</div></div>' +
+        '<button data-a="ana-apply" class="shrink-0 h-10 px-4 rounded-xl bg-white text-slate-900 text-sm font-bold active:scale-95 transition">更新</button></div></div>' : '');
   }
   function anaHistHTML() {
     if (!anaHist.length) return '';
@@ -1844,6 +1894,8 @@
         renderPhrases(); toast('「' + CAT[up2.c].l + '」に戻しました');
         break;
       case 'ana-run': runAnalyze(); break;
+      case 'ana-apply': if (A.full) { A.res = A.full; A.full = null; A.sel = null; renderAnalyze(); } break;
+      case 'ana-retry-full': if (A.res) { A.t0 = Date.now(); runFull(A.res.text, A.req); renderAnalyze(); startTimer(); } break;
       case 'chunk': var pth = b.getAttribute('data-path'); A.sel = A.sel === pth ? null : pth; renderAnalyze(); e.stopPropagation(); break;
       case 'ana-slash': A.slash = !A.slash; renderAnalyze(); break;
       case 'ana-labels': A.labels = !A.labels; renderAnalyze(); break;
@@ -1852,7 +1904,7 @@
         if (!A.res) break;
         speak(idx < 0 ? A.res.text : (A.res.sentences[idx].text || A.res.sentences[idx].chunks.map(function (c) { return c.text; }).join(' ')));
         break;
-      case 'ana-hist': var hx = anaHist[idx]; if (hx) { A.text = hx.text; A.res = hx; A.err = ''; A.sel = null; renderAnalyze(); window.scrollTo({ top: 0, behavior: 'smooth' }); } break;
+      case 'ana-hist': var hx = anaHist[idx]; if (hx) { A.req++; A.loading = false; A.full = null; A.fullPending = false; A.text = hx.text; A.res = hx; A.err = ''; A.sel = null; renderAnalyze(); window.scrollTo({ top: 0, behavior: 'smooth' }); } break;
       case 'ana-hist-del':
         var dx = anaHist[idx]; if (!dx) break;
         anaHist.splice(idx, 1); LS.set('ef_ana_hist', anaHist);
@@ -1863,7 +1915,7 @@
         if (confirm('解析した英文の記録をすべて削除しますか？')) { anaHist = []; LS.set('ef_ana_hist', anaHist); renderAnalyze(); toast('すべて削除しました'); }
         break;
       case 'ana-clear':
-        A.text = ''; A.res = null; A.err = ''; A.sel = null; renderAnalyze();
+        A.req++; A.text = ''; A.res = null; A.err = ''; A.sel = null; A.loading = false; A.full = null; A.fullPending = false; renderAnalyze();
         var tx = document.querySelector('[data-in="ana-text"]'); if (tx) tx.focus();
         break;
       case 'ana-fast':
