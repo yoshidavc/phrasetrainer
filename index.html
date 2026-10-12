@@ -606,6 +606,7 @@
   function gErr(code, msg) { var e = new Error(msg); e.code = code; return e; }
   function explainGeminiError(status, raw) {
     var m = String(raw || '');
+    if (status === 400 && /thinking/i.test(m)) return gErr('other', m.slice(0, 160));
     if (status === 400 && /api key|API_KEY/i.test(m)) return gErr('key', 'APIキーが正しくありません。設定のキーを確認してください');
     if (status === 401 || status === 403) return gErr('key', 'APIキーが無効か、このキーでは Gemini API が使えません（' + m.slice(0, 80) + '）');
     if (status === 404 || /not found|is not supported|no longer available|deprecated/i.test(m)) return gErr('model', 'モデル「' + settings.model + '」が見つかりません');
@@ -644,12 +645,22 @@
     });
   }
   function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function thinkingCfg(model, fast) {
+    if (!fast) return null;
+    if (/gemini-2\.5-pro/.test(model)) return { thinkingBudget: 128 };
+    if (/gemini-2\.5/.test(model)) return { thinkingBudget: 0 };
+    if (/gemini-[3-9]/.test(model)) return { thinkingLevel: 'low' };
+    return null;
+  }
   function geminiText(prompt, temperature, st) {
     st = st || { retries: 0, tried: [] };
     var model = settings.model || 'gemini-2.5-flash';
+    var gc = { temperature: temperature, responseMimeType: 'application/json' };
+    var tc = st.noThink ? null : thinkingCfg(model, settings.fast !== false);
+    if (tc) gc.thinkingConfig = tc;
     return fetchT(GAPI + 'models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(settings.apiKey), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: temperature, responseMimeType: 'application/json' } })
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: gc })
     }).then(function (r) {
       if (!r.ok) return r.text().then(function (t) { var m = ''; try { m = JSON.parse(t).error.message; } catch (e) { m = t; } throw explainGeminiError(r.status, m); });
       return r.json();
@@ -662,6 +673,7 @@
       return c.content.parts.map(function (p) { return p.thought ? '' : (p.text || ''); }).join('');
     }).catch(function (err) {
       var code = err && err.code;
+      if (tc && !st.noThink && /thinking/i.test(err && err.message || '')) { st.noThink = true; return geminiText(prompt, temperature, st); }
       // 混雑（503など）：少し待って再試行 → それでもダメなら別モデルへ
       if (code === 'busy' && st.retries < 2) {
         st.retries++;
@@ -1137,7 +1149,7 @@
   };
   var LABCOL = { S: '#1d4ed8', V: '#dc2626', O: '#059669', C: '#ea580c', M: '#0d9488', CONJ: '#7c3aed', P: '#94a3b8' };
   var anaHist = LS.get('ef_ana_hist', []);
-  var A = { text: '', loading: false, res: null, err: '', sel: null, slash: false, labels: true, chunkJa: false };
+  var A = { text: '', loading: false, res: null, err: '', sel: null, slash: false, labels: true, chunkJa: false, t0: 0, timer: null };
 
   function normRole(r) {
     r = String(r || '').toUpperCase().replace(/[^A-Z]/g, '');
@@ -1190,8 +1202,16 @@
     var text = A.text.replace(/\s+/g, ' ').trim();
     if (!text) { toast('英文を入力してください'); return; }
     if (text.length > 2000) { toast('2000文字以内で入力してください'); return; }
+    var cached = anaHist.filter(function (x) { return x.text === text; })[0];
+    if (cached) { A.res = cached; A.err = ''; A.sel = null; renderAnalyze(); toast('保存済みの解析結果を表示しました'); return; }
     if (!useAI()) { A.err = 'nokey'; A.res = null; renderAnalyze(); return; }
-    A.loading = true; A.err = ''; A.res = null; A.sel = null; renderAnalyze();
+    A.loading = true; A.err = ''; A.res = null; A.sel = null; A.t0 = Date.now(); renderAnalyze();
+    clearInterval(A.timer);
+    A.timer = setInterval(function () {
+      var el = document.getElementById('anaElapsed');
+      if (!A.loading) { clearInterval(A.timer); return; }
+      if (el) el.textContent = Math.floor((Date.now() - A.t0) / 1000) + '秒';
+    }, 500);
     geminiJSON(anaPrompt(text), 0.1).then(function (o) {
       var arr = (o && (o.sentences || o)) || [];
       if (!Array.isArray(arr) || !arr.length) throw new Error('解析結果が空でした');
@@ -1199,12 +1219,13 @@
         return { text: String(s.text || ''), pattern: String(s.pattern || ''), translation: String(s.translation || ''), points: Array.isArray(s.points) ? s.points.map(String) : [], chunks: cleanChunks(s.chunks, 0) };
       }).filter(function (s) { return s.chunks.length; }) };
       if (!res.sentences.length) throw new Error('解析結果を読み取れませんでした');
-      A.res = res; A.loading = false;
-      anaHist = [res].concat(anaHist.filter(function (x) { return x.text !== text; })).slice(0, 20);
+      res.sec = Math.round((Date.now() - A.t0) / 1000);
+      A.res = res; A.loading = false; clearInterval(A.timer);
+      anaHist = [res].concat(anaHist.filter(function (x) { return x.text !== text; })).slice(0, 100);
       LS.set('ef_ana_hist', anaHist);
       if (S.tab === 'analyze') { renderAnalyze(); var r = $('#anaResult'); if (r && window.innerWidth < 768) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
     }).catch(function (e) {
-      A.loading = false; A.err = e && e.message ? e.message : '解析に失敗しました';
+      A.loading = false; clearInterval(A.timer); A.err = e && e.message ? e.message : '解析に失敗しました';
       if (S.tab === 'analyze') renderAnalyze();
     });
   }
@@ -1267,7 +1288,7 @@
   function renderAnalyze() {
     if (S.tab !== 'analyze') return;
     var body = '';
-    if (A.loading) body = '<div class="space-y-3">' + [0, 1].map(function () { return '<div class="skeleton bg-white rounded-2xl border border-slate-200 p-5"><div class="h-5 bg-slate-200 rounded w-4/5"></div><div class="mt-3 h-5 bg-slate-100 rounded w-3/5"></div><div class="mt-4 h-3 bg-slate-100 rounded w-2/3"></div></div>'; }).join('') + '<p class="text-center text-xs text-slate-400">AI が文の構造を解析しています…</p></div>';
+    if (A.loading) body = '<div class="space-y-3">' + [0, 1].map(function () { return '<div class="skeleton bg-white rounded-2xl border border-slate-200 p-5"><div class="h-5 bg-slate-200 rounded w-4/5"></div><div class="mt-3 h-5 bg-slate-100 rounded w-3/5"></div><div class="mt-4 h-3 bg-slate-100 rounded w-2/3"></div></div>'; }).join('') + '<p class="text-center text-xs text-slate-400">AI が文の構造を解析しています… <span id="anaElapsed" class="tabular-nums">0秒</span></p></div>';
     else if (A.err === 'nokey') body = '<div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">構文解析は AI（Gemini）を使います。設定タブで Gemini API キーを登録してください。<button data-a="tab" data-tab="settings" class="mt-2 block font-semibold underline">設定を開く</button></div>';
     else if (A.err) body = '<div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><b>解析できませんでした</b><br>' + esc(A.err) + '<br><span class="text-xs">設定タブの「接続テスト」で状態を確認できます。</span></div>';
     else if (A.res) {
@@ -1283,16 +1304,35 @@
     view.innerHTML =
       '<section class="' + card + ' p-4 sm:p-6">' +
         '<label class="flex items-center gap-2 text-sm font-bold text-slate-900"><span class="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-600 grid place-items-center">' + icon('scan') + '</span>英文を入力（構造を解析します）</label>' +
-        '<textarea data-in="ana-text" rows="4" class="mt-3 ' + inputCls + ' en-serif leading-relaxed" placeholder="例：You actually can\'t overstate just how important good posture and tension-free playing is." autocapitalize="sentences" spellcheck="false">' + esc(A.text) + '</textarea>' +
-        '<div class="mt-1 flex justify-between text-[11px] text-slate-400"><span>複数の文もまとめて解析できます</span><span id="anaCount">' + A.text.length + ' / 2000</span></div>' +
+        '<div class="relative mt-3"><textarea data-in="ana-text" rows="4" class="' + inputCls + ' en-serif leading-relaxed" style="padding-right:2.75rem" placeholder="例：You actually can\'t overstate just how important good posture and tension-free playing is." autocapitalize="sentences" spellcheck="false">' + esc(A.text) + '</textarea>' +
+          '<button id="anaClear" data-a="ana-clear" class="' + (A.text ? '' : 'hidden ') + 'absolute top-2.5 right-2.5 w-8 h-8 grid place-items-center rounded-full bg-slate-200 text-slate-600 hover:bg-slate-300" aria-label="入力をクリア">' + icon('x') + '</button></div>' +
+        '<div class="mt-1 flex justify-between text-[11px] text-slate-400"><span>複数の文もまとめて解析できます ・ <button data-a="ana-fast" class="underline decoration-dotted">' + (settings.fast !== false ? '⚡速さ優先' : '🎯正確さ優先') + '</button></span><span id="anaCount">' + A.text.length + ' / 2000</span></div>' +
         '<button data-a="ana-run" ' + (A.loading ? 'disabled' : '') + ' class="mt-3 w-full inline-flex items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-lg font-bold shadow-lg shadow-indigo-600/20 active:scale-[.98] disabled:opacity-60 transition" style="min-height:60px">' +
           (A.loading ? icon('loader', 'spin') + '解析中…' : icon('scan') + '構造解析を実行') + '</button>' +
-        (anaHist.length ? '<div class="mt-4"><div class="text-[11px] font-semibold text-slate-400 mb-1.5">最近の解析</div><div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">' +
-          anaHist.slice(0, 10).map(function (x, i) { return '<button data-a="ana-hist" data-i="' + i + '" class="shrink-0 max-w-[16rem] truncate px-3 py-1.5 rounded-full text-xs border border-slate-200 bg-white text-slate-600 hover:border-slate-400 en-serif">' + esc(x.text) + '</button>'; }).join('') +
-          '</div></div>' : '') +
       '</section>' +
       '<section class="mt-4">' + legendHTML() + '</section>' +
-      '<section id="anaResult" class="mt-4 scroll-mt-20">' + body + '</section>';
+      '<section id="anaResult" class="mt-4 scroll-mt-20">' + body + '</section>' +
+      anaHistHTML();
+  }
+  function anaHistHTML() {
+    if (!anaHist.length) return '';
+    return '<section class="mt-6 ' + card + ' p-4 sm:p-5">' +
+      '<div class="flex items-center justify-between mb-3"><h2 class="text-sm font-bold text-slate-800">解析した英文の記録 <span class="text-xs font-normal text-slate-400">' + anaHist.length + '件</span></h2>' +
+      '<button data-a="ana-hist-clear" class="text-xs text-slate-400 hover:text-rose-600">すべて削除</button></div>' +
+      '<p class="text-[11px] text-slate-400 mb-2">タップすると保存済みの解析結果をすぐ表示します（AI は使いません）</p>' +
+      '<div class="divide-y divide-slate-100">' + anaHist.map(function (x, i) {
+        var tr = (x.sentences || []).map(function (s) { return s.translation; }).filter(Boolean).join(' ');
+        var d = new Date(x.at), ds = (d.getMonth() + 1) + '/' + d.getDate();
+        var on = A.res && A.res.text === x.text;
+        return '<div class="flex items-start gap-2 py-2.5">' +
+          '<button data-a="ana-hist" data-i="' + i + '" class="flex-1 min-w-0 text-left rounded-xl px-2 py-1 -mx-2 ' + (on ? 'bg-indigo-50' : 'hover:bg-slate-50') + '">' +
+            '<div class="en-serif text-[15px] text-slate-900 line-clamp-2 break-words">' + esc(x.text) + '</div>' +
+            (tr ? '<div class="text-xs text-slate-500 truncate mt-0.5">' + esc(tr) + '</div>' : '') +
+            '<div class="text-[10px] text-slate-400 mt-0.5">' + ds + ((x.sentences || []).length > 1 ? ' ・ ' + x.sentences.length + '文' : '') + '</div>' +
+          '</button>' +
+          '<button data-a="ana-hist-del" data-i="' + i + '" class="shrink-0 w-9 h-9 grid place-items-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-600" aria-label="削除">' + icon('trash') + '</button>' +
+        '</div>';
+      }).join('') + '</div></section>';
   }
 
   /* ================================================================
@@ -1812,7 +1852,24 @@
         if (!A.res) break;
         speak(idx < 0 ? A.res.text : (A.res.sentences[idx].text || A.res.sentences[idx].chunks.map(function (c) { return c.text; }).join(' ')));
         break;
-      case 'ana-hist': var hx = anaHist[idx]; if (hx) { A.text = hx.text; A.res = hx; A.err = ''; A.sel = null; renderAnalyze(); } break;
+      case 'ana-hist': var hx = anaHist[idx]; if (hx) { A.text = hx.text; A.res = hx; A.err = ''; A.sel = null; renderAnalyze(); window.scrollTo({ top: 0, behavior: 'smooth' }); } break;
+      case 'ana-hist-del':
+        var dx = anaHist[idx]; if (!dx) break;
+        anaHist.splice(idx, 1); LS.set('ef_ana_hist', anaHist);
+        if (A.res && A.res.text === dx.text) A.res = null;
+        renderAnalyze(); toast('記録を削除しました');
+        break;
+      case 'ana-hist-clear':
+        if (confirm('解析した英文の記録をすべて削除しますか？')) { anaHist = []; LS.set('ef_ana_hist', anaHist); renderAnalyze(); toast('すべて削除しました'); }
+        break;
+      case 'ana-clear':
+        A.text = ''; A.res = null; A.err = ''; A.sel = null; renderAnalyze();
+        var tx = document.querySelector('[data-in="ana-text"]'); if (tx) tx.focus();
+        break;
+      case 'ana-fast':
+        settings.fast = settings.fast === false; saveSettings(); renderAnalyze();
+        toast(settings.fast ? '⚡速さ優先：AI の思考を最小にして速く解析します' : '🎯正確さ優先：時間はかかりますが丁寧に解析します');
+        break;
       case 'to-ana':
         if (!S.results[idx]) break;
         talkReset(); A.text = S.results[idx].en.replace(/^[AB]:\s*/gm, '').replace(/\n/g, ' '); A.res = null; A.err = ''; A.sel = null;
@@ -1913,6 +1970,7 @@
       T.typed = v;
     } else if (k === 'ana-text') {
       A.text = v; var ac2 = $('#anaCount'); if (ac2) ac2.textContent = v.length + ' / 2000';
+      var cb2 = $('#anaClear'); if (cb2) cb2.classList.toggle('hidden', !v);
     } else if (k === 'idea') {
       S.idea = v;
     } else if (k.indexOf('form-') === 0) {
