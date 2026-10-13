@@ -626,7 +626,7 @@
     });
   }
   // 使えるモデルを一覧から自動選択
-  function pickModel(exclude) {
+  function listModels(exclude) {
     exclude = exclude || [];
     return fetchT(GAPI + 'models?pageSize=200&key=' + encodeURIComponent(settings.apiKey), { method: 'GET' }, 20000).then(function (r) {
       if (!r.ok) return r.text().then(function (t) { var m = ''; try { m = JSON.parse(t).error.message; } catch (e) {} throw explainGeminiError(r.status, m); });
@@ -634,16 +634,49 @@
     }).then(function (d) {
       var names = (d.models || []).filter(function (m) { return (m.supportedGenerationMethods || []).indexOf('generateContent') >= 0; })
         .map(function (m) { return m.name.replace(/^models\//, ''); })
-        .filter(function (n) { return /^gemini-/.test(n) && !/(image|tts|audio|live|embedding|vision|aqa|learnlm|robotics|computer)/.test(n) && exclude.indexOf(n) < 0; });
+        .filter(function (n) { return /^gemini-/.test(n) && !/(image|tts|audio|live|embedding|vision|aqa|learnlm|robotics|computer|native|thinking)/.test(n) && exclude.indexOf(n) < 0; });
       if (!names.length) throw gErr('model', 'このキーで使える Gemini モデルが見つかりませんでした');
       var score = function (n) {
         var v = parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [0, 0])[1]) || 0;
-        return v * 100 + (/flash/.test(n) ? 20 : 0) + (/lite/.test(n) ? -8 : 0) + (/(preview|exp)/.test(n) ? -60 : 0) + (/latest/.test(n) ? 3 : 0) + (/pro/.test(n) ? -5 : 0);
+        return v * 100 + (/flash/.test(n) ? 20 : 0) + (/lite/.test(n) ? -8 : 0) + (/(preview|exp)/.test(n) ? -60 : 0) + (/latest/.test(n) ? 3 : 0) + (/pro/.test(n) ? -40 : 0);
       };
       names.sort(function (a, b) { return score(b) - score(a); });
-      return names[0];
+      return names;
     });
   }
+  // 候補モデルに同時に短い問い合わせをして、いちばん速く応答したモデルを選ぶ
+  function pingModel(m) {
+    var t0 = Date.now(), gc = { temperature: 0, responseMimeType: 'application/json', maxOutputTokens: 20 };
+    var tc = thinkingCfg(m, true); if (tc) gc.thinkingConfig = tc;
+    var once = function (cfg) {
+      return fetchT(GAPI + 'models/' + encodeURIComponent(m) + ':generateContent?key=' + encodeURIComponent(settings.apiKey), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Reply with this JSON only: {"ok":true}' }] }], generationConfig: cfg })
+      }, 15000).then(function (r) {
+        if (r.ok) return r.json();
+        return r.text().then(function (t) { var msg = ''; try { msg = JSON.parse(t).error.message; } catch (e) {} throw explainGeminiError(r.status, msg); });
+      });
+    };
+    return once(gc).catch(function (err) {
+      if (gc.thinkingConfig && /thinking/i.test(err && err.message || '')) { delete gc.thinkingConfig; t0 = Date.now(); return once(gc); }
+      throw err;
+    }).then(function () { return { model: m, ok: true, ms: Date.now() - t0 }; }, function (err) {
+      return { model: m, ok: false, ms: Date.now() - t0, why: err && err.code === 'timeout' ? '応答なし' : err && err.code === 'busy' ? '混雑' : err && err.code === 'quota' ? '上限' : 'エラー' };
+    });
+  }
+  function speedTest(exclude) {
+    return listModels(exclude).then(function (names) {
+      var cands = names.filter(function (n) { return !/pro/.test(n); }).slice(0, 6);
+      if (!cands.length) cands = names.slice(0, 3);
+      return Promise.all(cands.map(pingModel));
+    }).then(function (rs) {
+      rs.sort(function (a, b) { return (b.ok - a.ok) || (a.ms - b.ms); });
+      S.modelTest = rs;
+      if (!rs[0] || !rs[0].ok) throw gErr('timeout', 'どのモデルからも応答がありませんでした。通信状況を確認するか、時間をおいて試してください');
+      return rs[0].model;
+    });
+  }
+  function pickModel(exclude) { return speedTest(exclude); }
   function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function thinkingCfg(model, fast) {
     if (!fast) return null;
@@ -661,7 +694,7 @@
     return fetchT(GAPI + 'models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(settings.apiKey), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: gc })
-    }).then(function (r) {
+    }, st.timeout || 60000).then(function (r) {
       if (!r.ok) return r.text().then(function (t) { var m = ''; try { m = JSON.parse(t).error.message; } catch (e) { m = t; } throw explainGeminiError(r.status, m); });
       return r.json();
     }).then(function (data) {
@@ -679,7 +712,7 @@
         st.retries++;
         return wait(1500 * st.retries).then(function () { return geminiText(prompt, temperature, st); });
       }
-      if ((code === 'busy' || code === 'model') && st.tried.length < 2) {
+      if ((code === 'busy' || code === 'model' || code === 'timeout') && st.tried.length < 2) {
         st.tried.push(model); st.retries = 0;
         return pickModel(st.tried).then(function (m) {
           settings.model = m; saveSettings();
@@ -699,7 +732,7 @@
     throw gErr('parse', 'AI の回答を読み取れませんでした。もう一度お試しください');
   }
   function geminiJSON(prompt, temperature, opts) {
-    return geminiText(prompt, temperature == null ? 0.2 : temperature, opts ? { retries: 0, tried: [], forceFast: !!opts.fast } : null).then(parseJSONLoose);
+    return geminiText(prompt, temperature == null ? 0.2 : temperature, { retries: 0, tried: [], forceFast: !!(opts && opts.fast), timeout: opts && opts.timeout }).then(parseJSONLoose);
   }
 
   function geminiGenerate(ph, tone) {
@@ -1232,7 +1265,7 @@
   }
   function runFull(text, id) {
     A.fullPending = true; A.full = null; A.fullErr = '';
-    geminiJSON(anaPrompt(text), 0.1).then(function (o) {
+    geminiJSON(anaPrompt(text), 0.1, { timeout: 120000 }).then(function (o) {
       var res = toRes(o, text, false);
       res.sec = Math.round((Date.now() - A.t0) / 1000);
       saveHist(res);                       // 画面を離れていても記録は保存
@@ -1263,7 +1296,7 @@
     A.loading = true; A.err = ''; A.res = null; A.sel = null; A.full = null; A.fullErr = ''; A.t0 = Date.now();
     runFull(text, id);                     // 詳しい解析（品詞・和訳・節の中身）をバックグラウンドで開始
     renderAnalyze(); startTimer();
-    geminiJSON(quickPrompt(text), 0.1, { fast: true }).then(function (o) {   // 主語・動詞など骨組みだけを先に
+    geminiJSON(quickPrompt(text), 0.1, { fast: true, timeout: 25000 }).then(function (o) {   // 主語・動詞など骨組みだけを先に
       if (id !== A.req || !A.loading) return;
       A.res = toRes(o, text, true); A.loading = false;
       if (S.tab === 'analyze') { renderAnalyze(); var r = $('#anaResult'); if (r && window.innerWidth < 768) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
@@ -1787,7 +1820,14 @@
           '<option value="local"' + (settings.engine === 'local' ? ' selected' : '') + '>内蔵エンジンのみ</option></select></div>' +
       '</div>' +
       '<div class="mt-3 flex flex-wrap items-center gap-2"><button data-a="test-ai" class="' + btnGhost + ' border border-slate-200"' + (S.aiTest === 'testing' ? ' disabled' : '') + '>' + (S.aiTest === 'testing' ? icon('loader', 'spin') + '接続テスト中…' : icon('check') + '接続テスト') + '</button>' +
-        '<button data-a="auto-model" class="' + btnGhost + ' border border-slate-200">' + icon('refresh') + '使えるモデルを自動選択</button></div>' +
+        '<button data-a="auto-model" class="' + btnGhost + ' border border-slate-200">' + icon('refresh') + '速いモデルを自動選択（速度テスト）</button></div>' +
+      (S.aiTest === 'testing' ? '<p class="mt-2 text-xs text-slate-500">テスト中です（最大20秒ほどかかります）…</p>' : '') +
+      (S.modelTest && S.modelTest.length ? '<div class="mt-2 rounded-xl border border-slate-200 divide-y divide-slate-100 text-xs">' + S.modelTest.map(function (r) {
+        var cur = r.model === settings.model;
+        return '<div class="flex items-center gap-2 px-3 py-2' + (cur ? ' bg-emerald-50' : '') + '"><span class="flex-1 font-mono truncate">' + esc(r.model) + '</span>' +
+          (r.ok ? '<span class="tabular-nums text-emerald-700">' + (r.ms / 1000).toFixed(1) + '秒</span>' : '<span class="text-rose-600">✗ ' + esc(r.why) + '</span>') +
+          (r.ok && !cur ? '<button data-a="use-model" data-m="' + esc(r.model) + '" class="ml-1 px-2 py-0.5 rounded-lg border border-slate-300 bg-white">使う</button>' : (cur ? '<span class="ml-1 text-emerald-700 font-semibold">使用中</span>' : '')) + '</div>';
+      }).join('') + '</div>' : '') +
       (S.aiTest && S.aiTest !== 'testing' ? '<p class="mt-2 text-xs rounded-xl px-3 py-2 ' + (S.aiTest.ok ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200') + '">' + esc(S.aiTest.msg) + '</p>' : '') +
       '<p class="mt-3 text-xs text-slate-600 bg-slate-50 rounded-xl p-3 leading-relaxed">AI には各フレーズの<b>用法（品詞）</b>を明示して渡し、返ってきた例文も検証します（例：「In conclusion」が主語として使われた文は破棄）。不合格・通信エラー時は内蔵エンジンが自動で補完します。</p>');
 
@@ -1977,8 +2017,9 @@
       case 'test-ai':
         if (!settings.apiKey) { toast('先に API キーを入力してください'); break; }
         S.aiTest = 'testing'; renderSettings();
-        geminiJSON('Reply with this JSON only: {"ok": true}').then(function () {
-          S.aiTest = { ok: true, msg: '✓ 接続成功：モデル「' + settings.model + '」で AI が使えます' };
+        var t0 = Date.now();
+        geminiJSON('Reply with this JSON only: {"ok": true}', 0, { fast: true, timeout: 20000 }).then(function () {
+          S.aiTest = { ok: true, msg: '✓ 接続成功：モデル「' + settings.model + '」（応答 ' + ((Date.now() - t0) / 1000).toFixed(1) + '秒）' };
         }).catch(function (e) {
           S.aiTest = { ok: false, msg: '✗ ' + (e && e.message ? e.message : '接続に失敗しました') };
         }).then(function () { renderSettings(); });
@@ -1986,12 +2027,17 @@
       case 'auto-model':
         if (!settings.apiKey) { toast('先に API キーを入力してください'); break; }
         S.aiTest = 'testing'; renderSettings();
-        pickModel().then(function (m) {
+        S.modelTest = null;
+        speedTest().then(function (m) {
           settings.model = m; saveSettings();
-          S.aiTest = { ok: true, msg: '✓ モデル「' + m + '」を設定しました' };
+          S.aiTest = { ok: true, msg: '✓ いちばん速いモデル「' + m + '」を設定しました' };
         }).catch(function (e) {
           S.aiTest = { ok: false, msg: '✗ ' + (e && e.message ? e.message : '取得に失敗しました') };
         }).then(function () { renderSettings(); });
+        break;
+      case 'use-model':
+        settings.model = b.getAttribute('data-m'); saveSettings();
+        S.aiTest = { ok: true, msg: '✓ モデル「' + settings.model + '」を設定しました' }; renderSettings();
         break;
       case 'test-voice': speak('Hello! This is how example sentences will sound in Phrase Trainer.'); break;
       case 'sheet-mode': settings.sheetMode = b.getAttribute('data-mode'); saveSettings(); renderSettings(); break;
