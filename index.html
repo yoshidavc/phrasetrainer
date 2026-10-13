@@ -78,7 +78,7 @@
 </div>
 
 <nav class="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 safe-bottom">
-  <div class="grid grid-cols-5" id="navMobile"></div>
+  <div class="grid grid-cols-6" id="navMobile"></div>
 </nav>
 
 <div id="toast" class="fixed left-1/2 -translate-x-1/2 bottom-24 md:bottom-8 z-50 px-4 py-2.5 rounded-full bg-slate-900 text-white text-sm shadow-lg opacity-0 pointer-events-none" style="transform:translate(-50%,8px)"></div>
@@ -381,6 +381,7 @@
     archive: '<rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
     undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/>',
     bulb: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V16h8v-1.3A7 7 0 0 0 12 2z"/>',
+    translate: '<path d="M4 5h8M8 3v2M5.5 9c1.5 3 4 5 7 6M10.5 5c-1 4-3.5 7-6.5 9"/><path d="m13 21 4-9 4 9M14.5 18h5"/>',
     scan: '<path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="16" r="3"/><path d="m20.2 18.2 2 2"/>',
     stop: '<rect x="6" y="6" width="12" height="12" rx="2.5"/>',
     keyboard: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M8 16h8"/>'
@@ -603,7 +604,7 @@
   }
 
   /* ---------- Gemini 共通通信（モデル自動切替・エラー日本語化） ---------- */
-  var APP_VER = 'v1.7（10/13）';
+  var APP_VER = 'v1.8（10/13）';
   var GAPI = 'https://generativelanguage.googleapis.com/v1beta/';
   function gErr(code, msg) { var e = new Error(msg); e.code = code; return e; }
   function explainGeminiError(status, raw) {
@@ -1184,7 +1185,7 @@
   };
   var LABCOL = { S: '#1d4ed8', V: '#dc2626', O: '#059669', C: '#ea580c', M: '#0d9488', CONJ: '#7c3aed', P: '#94a3b8' };
   var anaHist = LS.get('ef_ana_hist', []);
-  var A = { text: '', loading: false, res: null, err: '', sel: null, slash: false, labels: true, chunkJa: false, t0: 0, timer: null, req: 0, fullPending: false, full: null, fullErr: '' };
+  var A = { text: '', loading: false, res: null, err: '', sel: null, slash: false, labels: true, chunkJa: false, id: 'a', t0: 0, timer: null, req: 0, fullPending: false, full: null, fullErr: '' };
 
   function normRole(r) {
     r = String(r || '').toUpperCase().replace(/[^A-Z]/g, '');
@@ -1308,50 +1309,60 @@
       if (!A.fullPending && A.loading) { A.loading = false; A.err = A.fullErr || '解析に失敗しました'; renderAnalyze(); }
     });
   }
-  function chunkAt(path) {
-    var ps = path.split('.').map(Number), s = A.res.sentences[ps[0]], c = s.chunks[ps[1]];
+  function chunkAt(path, ctx) {
+    ctx = ctx || A;
+    var ps = path.split('.').map(Number), s = ctx.res.sentences[ps[0]], c = s && s.chunks[ps[1]];
     for (var i = 2; i < ps.length && c; i++) c = c.children && c.children[ps[i]];
     return c;
   }
-  function chunkHTML(c, path, depth) {
-    var sel = A.sel === path ? ' sel' : '';
+  function chunkHTML(c, path, depth, ctx) {
+    ctx = ctx || A;
+    var sel = ctx.sel === path ? ' sel' : '';
     var inner;
-    if (c.children) inner = c.children.map(function (k, j) { return chunkHTML(k, path + '.' + j, depth + 1); }).join(' ');
+    if (c.children) inner = c.children.map(function (k, j) { return chunkHTML(k, path + '.' + j, depth + 1, ctx); }).join(' ');
     else inner = esc(c.text);
     if (c.role === 'M' && !c.children) inner = '<span class="pr">(</span>' + inner + '<span class="pr">)</span>';
     else if (c.role === 'M' && c.children) inner = '<span class="pr">(</span> ' + inner + ' <span class="pr">)</span>';
     var cls = 'ck r-' + c.role + sel;
     if (c.children && (c.role === 'S' || c.role === 'V')) cls = 'ck ' + (c.role === 'S' ? 'r-O' : 'r-C') + sel; // 節の主語は下線枠で表示
     if (c.children && c.role === 'S') cls += '" style="border-bottom-color:#3b82f6';
-    var span = '<span data-a="chunk" data-path="' + path + '" class="' + cls + '">' + inner + '</span>';
-    if (depth > 0 || !A.labels || c.role === 'P') return span;
+    var span = '<span data-a="chunk" data-ctx="' + ctx.id + '" data-path="' + path + '" class="' + cls + '">' + inner + '</span>';
+    if (depth > 0 || !ctx.labels || c.role === 'P') return span;
     var lab = (ROLES[c.role] ? (ROLES[c.role].en ? ROLES[c.role].en + ' ' : '') + ROLES[c.role].l : '') + (c.children ? '（節）' : '');
     return '<span class="inline-block align-top mb-2" style="max-width:100%">' + span +
-      '<span class="rlab" style="color:' + LABCOL[c.role] + '">' + esc(lab) + (A.chunkJa && c.ja ? '<span class="block font-normal text-slate-500 mt-0.5">' + esc(c.ja) + '</span>' : '') + '</span></span>';
+      '<span class="rlab" style="color:' + LABCOL[c.role] + '">' + esc(lab) + (ctx.chunkJa && c.ja ? '<span class="block font-normal text-slate-500 mt-0.5">' + esc(c.ja) + '</span>' : '') + '</span></span>';
   }
-  function sentenceHTML(s, si) {
+  function lineHTML(s, si, ctx) {
     var parts = [];
     s.chunks.forEach(function (c, ci) {
-      if (ci > 0 && A.slash && c.role !== 'P') parts.push('<span class="slash">/</span>');
+      if (ci > 0 && ctx.slash && c.role !== 'P') parts.push('<span class="slash">/</span>');
       else if (ci > 0 && c.role !== 'P') parts.push(' ');
-      parts.push(chunkHTML(c, si + '.' + ci, 0));
+      parts.push(chunkHTML(c, si + '.' + ci, 0, ctx));
     });
-    var selC = A.sel && A.sel.split('.')[0] === String(si) ? chunkAt(A.sel) : null;
+    return parts.join('');
+  }
+  function detailHTML(si, ctx) {
+    var selC = ctx.sel && ctx.sel.split('.')[0] === String(si) ? chunkAt(ctx.sel, ctx) : null;
+    if (!selC) return '';
+    return '<div class="mt-3 rounded-xl border p-3 fade-up ' + ROLES[selC.role].box + '">' +
+      '<div class="flex flex-wrap items-center gap-2"><span class="text-xs font-bold">' + (ROLES[selC.role].en ? ROLES[selC.role].en + '：' : '') + ROLES[selC.role].l + '</span>' + (selC.pos ? '<span class="text-[11px] px-2 py-0.5 rounded-full bg-white/70 border border-current/20">' + esc(selC.pos) + '</span>' : '') + '</div>' +
+      '<div class="mt-1 en-serif text-[16px] text-slate-900">' + esc(selC.text) + '</div>' +
+      (selC.ja ? '<div class="text-sm text-slate-700">' + esc(selC.ja) + '</div>' : '') +
+      (selC.note ? '<div class="mt-1 text-xs text-slate-600">💡 ' + esc(selC.note) + '</div>' : '') +
+      (ctx.res.quick ? '<div class="mt-1 text-[11px] text-slate-500">' + (ctx.id === 'a' ? '品詞・意味の説明は、詳しい解析の完了後に表示されます。' : '品詞や意味の詳しい説明は「構文」ボタンで構文解析タブに送ると見られます。') + '</div>' : '') +
+      (selC.children ? '<div class="mt-1 text-[11px] text-slate-500">この部分は中にさらに S・V などを含む「節」です。中の色分けも確認しましょう。</div>' : '') +
+    '</div>';
+  }
+  function sentenceHTML(s, si, ctx) {
+    ctx = ctx || A;
     return '<article class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5">' +
       '<div class="flex items-center justify-between gap-2 mb-3">' +
         '<div class="flex items-center gap-2 min-w-0"><span class="w-6 h-6 rounded-full bg-slate-900 text-white text-xs font-semibold grid place-items-center shrink-0">' + (si + 1) + '</span>' +
         (s.pattern ? '<span class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 truncate">' + esc(s.pattern) + '</span>' : '') + '</div>' +
         '<button data-a="ana-say" data-i="' + si + '" class="' + btnGhost + '">' + icon('volume') + '<span class="text-xs">再生</span></button>' +
       '</div>' +
-      '<div class="en-serif text-[19px] leading-[2.1] text-slate-900 break-words">' + parts.join('') + '</div>' +
-      (selC ? '<div class="mt-3 rounded-xl border p-3 fade-up ' + ROLES[selC.role].box + '">' +
-          '<div class="flex flex-wrap items-center gap-2"><span class="text-xs font-bold">' + (ROLES[selC.role].en ? ROLES[selC.role].en + '：' : '') + ROLES[selC.role].l + '</span>' + (selC.pos ? '<span class="text-[11px] px-2 py-0.5 rounded-full bg-white/70 border border-current/20">' + esc(selC.pos) + '</span>' : '') + '</div>' +
-          '<div class="mt-1 en-serif text-[16px] text-slate-900">' + esc(selC.text) + '</div>' +
-          (selC.ja ? '<div class="text-sm text-slate-700">' + esc(selC.ja) + '</div>' : '') +
-          (selC.note ? '<div class="mt-1 text-xs text-slate-600">💡 ' + esc(selC.note) + '</div>' : '') +
-          (A.res.quick ? '<div class="mt-1 text-[11px] text-slate-500">品詞・意味の説明は、詳しい解析の完了後に表示されます。</div>' : '') +
-          (selC.children ? '<div class="mt-1 text-[11px] text-slate-500">この部分は中にさらに S・V などを含む「節」です。中の色分けも確認しましょう。</div>' : '') +
-        '</div>' : '') +
+      '<div class="en-serif text-[19px] leading-[2.1] text-slate-900 break-words">' + lineHTML(s, si, ctx) + '</div>' +
+      detailHTML(si, ctx) +
       (s.translation ? '<div class="mt-3 pt-3 border-t border-slate-100"><div class="text-[11px] font-semibold text-slate-400 mb-1">和訳</div><p class="text-[15px] leading-relaxed text-slate-700">' + esc(s.translation) + '</p></div>' : '') +
       (s.points.length ? '<ul class="mt-2 space-y-1">' + s.points.map(function (pt) { return '<li class="flex gap-2 text-sm text-slate-600"><span class="text-amber-500 shrink-0">●</span><span>' + esc(pt) + '</span></li>'; }).join('') + '</ul>' : '') +
       '</article>';
@@ -1380,7 +1391,7 @@
         (A.res.quick && A.fullPending ? '<div class="mb-3 flex items-center gap-2 rounded-xl bg-indigo-50 border border-indigo-200 px-3 py-2 text-xs text-indigo-800">' + icon('loader', 'spin') + '<span>主語・動詞を先に表示しています。品詞・和訳・節の中身をバックグラウンドで解析中… <span id="anaElapsed2" class="tabular-nums">' + Math.floor((Date.now() - A.t0) / 1000) + '秒</span></span></div>' : '') +
         (A.res.quick && !A.fullPending && !A.full && A.fullErr ? '<div class="mb-3 flex items-center gap-2 rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-800"><span class="flex-1">詳しい解析に失敗しました（' + esc(A.fullErr) + '）</span><button data-a="ana-retry-full" class="font-semibold underline">再試行</button></div>' : '') +
         '<p class="mb-3 text-xs text-slate-400">色の付いた部分をタップすると、品詞と役割の説明が表示されます</p>' +
-        '<div class="space-y-3">' + A.res.sentences.map(sentenceHTML).join('') + '</div>' +
+        '<div class="space-y-3">' + A.res.sentences.map(function (s, i) { return sentenceHTML(s, i, A); }).join('') + '</div>' +
         (A.res.sentences.length > 1 && all ? '<section class="mt-4 ' + card + ' p-4"><div class="text-xs font-semibold text-slate-500 mb-1">全文の和訳</div><p class="text-[15px] leading-relaxed text-slate-700">' + esc(all) + '</p></section>' : '');
     }
     view.innerHTML =
@@ -1420,6 +1431,199 @@
       }).join('') + '</div></section>';
   }
 
+
+  /* ================================================================
+     和文英訳（TOEIC 600 / 900 / ネイティブ）
+  ================================================================ */
+  var LEVELS = [
+    { k: 'toeic600', l: 'TOEIC 600', sub: 'シンプルで正確', badge: 'bg-emerald-600', ring: 'border-emerald-200', soft: 'bg-emerald-50 text-emerald-800' },
+    { k: 'toeic900', l: 'TOEIC 900', sub: 'ビジネスで通用する洗練された英語', badge: 'bg-sky-600', ring: 'border-sky-200', soft: 'bg-sky-50 text-sky-800' },
+    { k: 'native',   l: 'ネイティブ', sub: '自然で口語的な言い回し', badge: 'bg-violet-600', ring: 'border-violet-200', soft: 'bg-violet-50 text-violet-800' }
+  ];
+  var SCENES = [
+    { k: 'any', l: '指定なし', d: 'no specific situation; choose the most natural register' },
+    { k: 'talk', l: '会話', d: 'spoken conversation with a colleague or friend' },
+    { k: 'mail', l: 'ビジネスメール', d: 'a business email' },
+    { k: 'meeting', l: '会議・プレゼン', d: 'speaking in a business meeting or presentation' }
+  ];
+  var trHist = LS.get('ef_tr_hist', []);
+  var TR = { text: '', scene: 'any', loading: false, coloring: false, err: '', colorErr: '', levels: null, labels: true, slash: false, req: 0, t0: 0, timer: null };
+  function ctxById(id) {
+    if (id === 'a') return A;
+    if (TR.levels) for (var i = 0; i < TR.levels.length; i++) if (TR.levels[i].id === id) return TR.levels[i];
+    return null;
+  }
+  function trPrompt(ja, scene) {
+    var sc = SCENES.filter(function (x) { return x.k === scene; })[0] || SCENES[0];
+    return [
+      'You are a professional Japanese-to-English translator and an English coach for Japanese business people.',
+      'Translate the Japanese text below into English at THREE proficiency levels. Every version must convey the full meaning accurately.',
+      'Japanese: <<<' + ja + '>>>',
+      'Situation: ' + sc.d + '.',
+      '',
+      'Levels:',
+      '- "toeic600": clear, correct English a TOEIC 600 learner can actually produce: common words, basic grammar, short sentences.',
+      '- "toeic900": polished English of a TOEIC 900 professional: precise vocabulary, varied sentence structures, appropriate formality.',
+      '- "native": how a native speaker would most naturally say/write it in this situation: idiomatic, concise, natural collocations and phrasal verbs, not stiff or textbook-like.',
+      '',
+      'For each level give: "en" (the English), "note" (Japanese, max 70 characters: what characterizes this version / key word choices compared with the other levels), "phrases" (1-3 reusable English expressions used in this version that are worth memorizing, each with "en" and short Japanese "ja").',
+      'Return ONLY JSON: {"levels":[{"level":"toeic600","en":"...","note":"...","phrases":[{"en":"...","ja":"..."}]},{"level":"toeic900",...},{"level":"native",...}]}'
+    ].join('\n');
+  }
+  function skeletonMultiPrompt(texts) {
+    return [
+      'For each numbered English text below, identify the sentence skeleton for a Japanese learner. Be fast and concise.',
+      texts.map(function (t, i) { return '[' + i + '] <<<' + t + '>>>'; }).join('\n'),
+      'For EACH sentence of each text, split it into consecutive chunks that reproduce the sentence EXACTLY in order (no words added, dropped or changed).',
+      'Roles: "S" subject (whole noun phrase/clause), "V" finite verb phrase incl. auxiliaries/negation, "O" object, "C" complement, "M" modifier (adverbs, prepositional phrases, adverbial clauses), "CONJ" conjunction/connector, "P" punctuation.',
+      'Analyze the main clause only (no nesting). Keep noun modifiers inside the noun chunk. Also give "pattern" (e.g. "第3文型（SVO）") for each sentence.',
+      'Return ONLY JSON: {"texts":[{"id":0,"sentences":[{"text":"...","pattern":"...","chunks":[{"text":"...","role":"S"}]}]}]}'
+    ].join('\n');
+  }
+  function trStartTimer() {
+    clearInterval(TR.timer);
+    TR.timer = setInterval(function () {
+      if (!TR.loading && !TR.coloring) { clearInterval(TR.timer); return; }
+      var el = document.getElementById('trElapsed'); if (el) el.textContent = Math.floor((Date.now() - TR.t0) / 1000) + '秒';
+    }, 500);
+  }
+  function trSaveHist() {
+    var rec = { text: TR.text.trim(), scene: TR.scene, at: Date.now(), levels: TR.levels.map(function (L) { return { k: L.k, en: L.en, note: L.note, phrases: L.phrases, res: L.res }; }) };
+    trHist = [rec].concat(trHist.filter(function (x) { return !(x.text === rec.text && x.scene === rec.scene); })).slice(0, 100);
+    LS.set('ef_tr_hist', trHist);
+  }
+  function trLoad(rec) {
+    TR.text = rec.text; TR.scene = rec.scene || 'any'; TR.err = ''; TR.colorErr = ''; TR.loading = false; TR.coloring = false; TR.req++;
+    TR.levels = rec.levels.map(function (L, i) { return { id: 't' + i, k: L.k, en: L.en, note: L.note, phrases: L.phrases || [], res: L.res, sel: null }; });
+  }
+  function runColoring(id) {
+    TR.coloring = true; TR.colorErr = '';
+    var texts = TR.levels.map(function (L) { return L.en; });
+    geminiJSON(skeletonMultiPrompt(texts), 0.1, { fast: true, timeout: 40000 }).then(function (o) {
+      if (id !== TR.req) return;
+      var arr = (o && (o.texts || o)) || [];
+      arr.forEach(function (t, j) {
+        var idx = typeof t.id === 'number' ? t.id : j, L = TR.levels[idx];
+        if (!L) return;
+        try { L.res = toRes(t, L.en, true); } catch (e) {}
+      });
+      TR.coloring = false;
+      trSaveHist();
+      if (S.tab === 'translate') renderTranslate();
+    }).catch(function (e) {
+      if (id !== TR.req) return;
+      TR.coloring = false; TR.colorErr = e && e.message ? e.message : '色分けに失敗しました';
+      if (S.tab === 'translate') renderTranslate();
+    });
+  }
+  function runTranslate() {
+    var ja = TR.text.trim();
+    if (!ja) { toast('日本語を入力してください'); return; }
+    if (ja.length > 800) { toast('800文字以内で入力してください'); return; }
+    var cached = trHist.filter(function (x) { return x.text === ja && x.scene === TR.scene; })[0];
+    if (cached) { trLoad(cached); renderTranslate(); toast('保存済みの英訳を表示しました'); return; }
+    if (!useAI()) { TR.err = 'nokey'; TR.levels = null; renderTranslate(); return; }
+    var id = ++TR.req;
+    TR.loading = true; TR.err = ''; TR.colorErr = ''; TR.levels = null; TR.t0 = Date.now();
+    renderTranslate(); trStartTimer();
+    geminiJSON(trPrompt(ja, TR.scene), 0.4, { fast: true, timeout: 40000 }).then(function (o) {
+      if (id !== TR.req) return;
+      var arr = (o && (o.levels || o)) || [];
+      if (!Array.isArray(arr) || !arr.length) throw new Error('英訳が空でした');
+      TR.levels = LEVELS.map(function (lv, i) {
+        var x = arr.filter(function (a) { return a && String(a.level || '').toLowerCase().replace(/[^a-z0-9]/g, '') === lv.k; })[0] || arr[i] || {};
+        return { id: 't' + i, k: lv.k, en: String(x.en || '').trim(), note: String(x.note || ''), phrases: Array.isArray(x.phrases) ? x.phrases.filter(function (p) { return p && p.en; }).slice(0, 3) : [], res: null, sel: null };
+      }).filter(function (L) { return L.en; });
+      if (!TR.levels.length) throw new Error('英訳を読み取れませんでした');
+      TR.loading = false;
+      trSaveHist();
+      runColoring(id);                     // 色分けはバックグラウンドで
+      renderTranslate();
+    }).catch(function (e) {
+      if (id !== TR.req) return;
+      TR.loading = false; TR.err = e && e.message ? e.message : '英訳に失敗しました';
+      renderTranslate();
+    });
+  }
+  function levelCardHTML(L, i) {
+    var lv = LEVELS.filter(function (x) { return x.k === L.k; })[0] || LEVELS[i];
+    L.labels = TR.labels; L.slash = TR.slash; L.chunkJa = false;
+    var body;
+    if (L.res) body = L.res.sentences.map(function (s, si) {
+        return '<div class="' + (si ? 'mt-2' : '') + '">' + (s.pattern ? '<span class="inline-block mb-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">' + esc(s.pattern) + '</span>' : '') +
+          '<div class="en-serif text-[19px] leading-[2.1] text-slate-900 break-words">' + lineHTML(s, si, L) + '</div>' + detailHTML(si, L) + '</div>';
+      }).join('');
+    else body = '<div class="en-serif text-[19px] leading-relaxed text-slate-900 break-words">' + esc(L.en) + '</div>' +
+      (TR.coloring ? '<div class="mt-2 flex items-center gap-1.5 text-[11px] text-indigo-600">' + icon('loader', 'spin') + '主語・動詞などを色分け中…</div>' : '');
+    return '<article class="fade-up bg-white rounded-2xl border ' + lv.ring + ' shadow-sm p-4 sm:p-5" style="animation-delay:' + (i * 70) + 'ms">' +
+      '<div class="flex items-center gap-2 mb-3">' +
+        '<span class="text-xs font-bold text-white px-2.5 py-1 rounded-lg ' + lv.badge + '">' + lv.l + '</span>' +
+        '<span class="text-[11px] text-slate-500 truncate">' + lv.sub + '</span>' +
+        '<div class="ml-auto flex gap-1 shrink-0">' +
+          '<button data-a="tr-say" data-i="' + i + '" class="' + btnGhost + '" aria-label="読み上げ">' + icon('volume') + '<span class="text-xs hidden sm:inline">再生</span></button>' +
+          '<button data-a="tr-copy" data-i="' + i + '" class="' + btnGhost + '" aria-label="コピー">' + icon('copy') + '<span class="text-xs hidden sm:inline">コピー</span></button>' +
+          '<button data-a="tr-ana" data-i="' + i + '" class="' + btnGhost + '" aria-label="構文解析">' + icon('scan') + '<span class="text-xs hidden sm:inline">構文</span></button>' +
+        '</div>' +
+      '</div>' + body +
+      (L.note ? '<div class="mt-3 rounded-xl px-3 py-2 text-[13px] leading-relaxed ' + lv.soft + '">💡 ' + esc(L.note) + '</div>' : '') +
+      (L.phrases.length ? '<div class="mt-3"><div class="text-[11px] font-semibold text-slate-400 mb-1.5">覚えたい表現</div><div class="flex flex-wrap gap-2">' + L.phrases.map(function (p, j) {
+          var reg = findPhrase(p.en);
+          return '<span class="inline-flex items-center gap-1.5 pl-3 pr-1 py-1 rounded-full border border-slate-200 bg-slate-50 text-sm"><span class="en-serif text-slate-900">' + esc(p.en) + '</span>' + (p.ja ? '<span class="text-[11px] text-slate-500">' + esc(p.ja) + '</span>' : '') +
+            (reg ? '<span class="px-2 py-0.5 rounded-full text-[11px] text-emerald-700 bg-emerald-50">登録済</span>' : '<button data-a="tr-reg" data-i="' + i + '" data-j="' + j + '" class="px-2 py-0.5 rounded-full text-[11px] font-semibold text-white bg-slate-900">＋登録</button>') + '</span>';
+        }).join('') + '</div></div>' : '') +
+      '</article>';
+  }
+  function trHistHTML() {
+    if (!trHist.length) return '';
+    return '<section class="mt-6 ' + card + ' p-4 sm:p-5">' +
+      '<div class="flex items-center justify-between mb-3"><h2 class="text-sm font-bold text-slate-800">英訳した日本語の記録 <span class="text-xs font-normal text-slate-400">' + trHist.length + '件</span></h2>' +
+      '<button data-a="tr-hist-clear" class="text-xs text-slate-400 hover:text-rose-600">すべて削除</button></div>' +
+      '<p class="text-[11px] text-slate-400 mb-2">タップすると保存済みの英訳をすぐ表示します（AI は使いません）</p>' +
+      '<div class="divide-y divide-slate-100">' + trHist.map(function (x, i) {
+        var nat = (x.levels || []).filter(function (L) { return L.k === 'native'; })[0] || (x.levels || [])[0] || {};
+        var d = new Date(x.at), sc = SCENES.filter(function (s) { return s.k === x.scene; })[0];
+        return '<div class="flex items-start gap-2 py-2.5">' +
+          '<button data-a="tr-hist" data-i="' + i + '" class="flex-1 min-w-0 text-left rounded-xl px-2 py-1 -mx-2 hover:bg-slate-50">' +
+            '<div class="text-[15px] text-slate-900 line-clamp-2 break-words">' + esc(x.text) + '</div>' +
+            (nat.en ? '<div class="en-serif text-xs text-slate-500 truncate mt-0.5">' + esc(nat.en) + '</div>' : '') +
+            '<div class="text-[10px] text-slate-400 mt-0.5">' + (d.getMonth() + 1) + '/' + d.getDate() + (sc && sc.k !== 'any' ? ' ・ ' + sc.l : '') + '</div>' +
+          '</button>' +
+          '<button data-a="tr-hist-del" data-i="' + i + '" class="shrink-0 w-9 h-9 grid place-items-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-600" aria-label="削除">' + icon('trash') + '</button>' +
+        '</div>';
+      }).join('') + '</div></section>';
+  }
+  function renderTranslate() {
+    if (S.tab !== 'translate') return;
+    var body = '';
+    if (TR.loading) body = '<div class="space-y-3">' + LEVELS.map(function (lv) { return '<div class="skeleton bg-white rounded-2xl border border-slate-200 p-5"><span class="inline-block text-xs font-bold text-white px-2.5 py-1 rounded-lg ' + lv.badge + '">' + lv.l + '</span><div class="mt-3 h-5 bg-slate-200 rounded w-4/5"></div><div class="mt-2 h-5 bg-slate-100 rounded w-3/5"></div></div>'; }).join('') +
+      '<p class="text-center text-xs text-slate-400">3つのレベルで英訳しています… <span id="trElapsed" class="tabular-nums">0秒</span></p></div>';
+    else if (TR.err === 'nokey') body = '<div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">英訳は AI（Gemini）を使います。設定タブで Gemini API キーを登録してください。<button data-a="tab" data-tab="settings" class="mt-2 block font-semibold underline">設定を開く</button></div>';
+    else if (TR.err) body = '<div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><b>英訳できませんでした</b><br>' + esc(TR.err) + '<br><span class="text-xs">設定タブの「接続テスト」で状態を確認できます。</span></div>';
+    else if (TR.levels) {
+      body = '<div class="flex flex-wrap items-center gap-2 mb-3">' + toggleBtn('tr-labels', TR.labels, 'S/V 記号') + toggleBtn('tr-slash', TR.slash, '／ スラッシュ') +
+          (TR.coloring ? '<span class="text-[11px] text-indigo-600 inline-flex items-center gap-1">' + icon('loader', 'spin') + '色分け中… <span id="trElapsed" class="tabular-nums">' + Math.floor((Date.now() - TR.t0) / 1000) + '秒</span></span>' : '') +
+          (TR.colorErr ? '<span class="text-[11px] text-rose-600">色分けに失敗（' + esc(TR.colorErr) + '）<button data-a="tr-recolor" class="underline font-semibold ml-1">再試行</button></span>' : '') +
+        '</div>' +
+        '<div class="space-y-3">' + TR.levels.map(levelCardHTML).join('') + '</div>' +
+        '<p class="mt-3 text-[11px] text-slate-400">色の付いた部分をタップすると役割が表示されます。品詞や意味の詳しい説明は「構文」ボタンで構文解析タブへ。</p>';
+    }
+    view.innerHTML =
+      '<section class="' + card + ' p-4 sm:p-6">' +
+        '<label class="flex items-center gap-2 text-sm font-bold text-slate-900"><span class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 grid place-items-center">' + icon('translate') + '</span>日本語を入力（3つのレベルで英訳します）</label>' +
+        '<div class="relative mt-3"><textarea data-in="tr-text" rows="3" class="' + inputCls + ' leading-relaxed" style="padding-right:2.75rem" placeholder="例：来週の会議の資料を、金曜日までに送っていただけると助かります。">' + esc(TR.text) + '</textarea>' +
+          '<button id="trClear" data-a="tr-clear" class="' + (TR.text ? '' : 'hidden ') + 'absolute top-2.5 right-2.5 w-8 h-8 grid place-items-center rounded-full bg-slate-200 text-slate-600 hover:bg-slate-300" aria-label="入力をクリア">' + icon('x') + '</button></div>' +
+        '<div class="mt-2 flex flex-wrap items-center gap-2"><span class="text-[11px] font-semibold text-slate-400">場面</span>' + SCENES.map(function (sc) {
+            var a = TR.scene === sc.k;
+            return '<button data-a="tr-scene" data-k="' + sc.k + '" class="px-3 py-1.5 rounded-lg text-xs font-semibold border transition ' + (a ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200') + '">' + sc.l + '</button>';
+          }).join('') + '</div>' +
+        '<button data-a="tr-run" ' + (TR.loading ? 'disabled' : '') + ' class="mt-3 w-full inline-flex items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-lg font-bold shadow-lg shadow-emerald-600/20 active:scale-[.98] disabled:opacity-60 transition" style="min-height:60px">' +
+          (TR.loading ? icon('loader', 'spin') + '英訳中…' : icon('translate') + '英訳する（600／900／ネイティブ）') + '</button>' +
+      '</section>' +
+      '<section class="mt-4">' + legendHTML() + '</section>' +
+      '<section class="mt-4">' + body + '</section>' +
+      trHistHTML();
+  }
+
   /* ================================================================
      描画：共通パーツ
   ================================================================ */
@@ -1427,6 +1631,7 @@
     { k: 'generate', l: '例文作成', i: 'sparkles' },
     { k: 'phrases', l: 'フレーズ', i: 'list' },
     { k: 'analyze', l: '構文解析', i: 'scan' },
+    { k: 'translate', l: '英訳', i: 'translate' },
     { k: 'favorites', l: 'お気に入り', i: 'star' },
     { k: 'settings', l: '設定', i: 'settings' }
   ];
@@ -1878,6 +2083,7 @@
     else if (S.tab === 'phrases') renderPhrases();
     else if (S.tab === 'favorites') renderFavorites();
     else if (S.tab === 'analyze') renderAnalyze();
+    else if (S.tab === 'translate') renderTranslate();
     else renderSettings();
   }
 
@@ -1936,9 +2142,41 @@
         renderPhrases(); toast('「' + CAT[up2.c].l + '」に戻しました');
         break;
       case 'ana-run': runAnalyze(); break;
+      case 'tr-run': runTranslate(); break;
+      case 'tr-recolor': if (TR.levels) { TR.t0 = Date.now(); runColoring(TR.req); renderTranslate(); trStartTimer(); } break;
+      case 'tr-clear':
+        TR.req++; TR.text = ''; TR.levels = null; TR.err = ''; TR.loading = false; TR.coloring = false; renderTranslate();
+        var tt = document.querySelector('[data-in="tr-text"]'); if (tt) tt.focus();
+        break;
+      case 'tr-scene': TR.scene = b.getAttribute('data-k'); renderTranslate(); break;
+      case 'tr-labels': TR.labels = !TR.labels; renderTranslate(); break;
+      case 'tr-slash': TR.slash = !TR.slash; renderTranslate(); break;
+      case 'tr-say': if (TR.levels && TR.levels[idx]) speak(TR.levels[idx].en); break;
+      case 'tr-copy': if (TR.levels && TR.levels[idx]) copyText(TR.levels[idx].en); break;
+      case 'tr-ana':
+        if (!TR.levels || !TR.levels[idx]) break;
+        A.req++; A.loading = false; A.full = null; A.fullPending = false; A.text = TR.levels[idx].en; A.res = null; A.err = ''; A.sel = null;
+        S.tab = 'analyze'; render(); window.scrollTo(0, 0); runAnalyze();
+        break;
+      case 'tr-reg':
+        var tl = TR.levels && TR.levels[idx], tp = tl && tl.phrases[+b.getAttribute('data-j')];
+        if (!tp) break;
+        if (findPhrase(tp.en)) { toast('すでに登録されています'); break; }
+        var nitem = { id: uid(), p: tp.en, ja: tp.ja || '', c: classifyCategory(tp.en), t: detectType(tp.en), src: 'custom' };
+        custom.unshift(nitem); saveCustom(); renderTranslate();
+        toast('「' + CAT[nitem.c].l + '」にフレーズ登録しました');
+        break;
+      case 'tr-hist': var th = trHist[idx]; if (th) { trLoad(th); renderTranslate(); window.scrollTo({ top: 0, behavior: 'smooth' }); } break;
+      case 'tr-hist-del': if (trHist[idx]) { trHist.splice(idx, 1); LS.set('ef_tr_hist', trHist); renderTranslate(); toast('記録を削除しました'); } break;
+      case 'tr-hist-clear':
+        if (confirm('英訳の記録をすべて削除しますか？')) { trHist = []; LS.set('ef_tr_hist', trHist); renderTranslate(); toast('すべて削除しました'); }
+        break;
       case 'ana-apply': if (A.full) { A.res = A.full; A.full = null; A.sel = null; renderAnalyze(); } break;
       case 'ana-retry-full': if (A.res) { A.t0 = Date.now(); runFull(A.res.text, A.req); renderAnalyze(); startTimer(); } break;
-      case 'chunk': var pth = b.getAttribute('data-path'); A.sel = A.sel === pth ? null : pth; renderAnalyze(); e.stopPropagation(); break;
+      case 'chunk':
+        var pth = b.getAttribute('data-path'), cx = ctxById(b.getAttribute('data-ctx'));
+        if (cx) { cx.sel = cx.sel === pth ? null : pth; if (cx.id === 'a') renderAnalyze(); else renderTranslate(); }
+        e.stopPropagation(); break;
       case 'ana-slash': A.slash = !A.slash; renderAnalyze(); break;
       case 'ana-labels': A.labels = !A.labels; renderAnalyze(); break;
       case 'ana-ja': A.chunkJa = !A.chunkJa; if (A.chunkJa) A.labels = true; renderAnalyze(); break;
@@ -2068,6 +2306,8 @@
       var cb = $('#clearBtn'); if (cb) cb.classList.toggle('hidden', !v);
     } else if (k === 'talk-typed') {
       T.typed = v;
+    } else if (k === 'tr-text') {
+      TR.text = v; var tc2 = $('#trClear'); if (tc2) tc2.classList.toggle('hidden', !v);
     } else if (k === 'ana-text') {
       A.text = v; var ac2 = $('#anaCount'); if (ac2) ac2.textContent = v.length + ' / 2000';
       var cb2 = $('#anaClear'); if (cb2) cb2.classList.toggle('hidden', !v);
