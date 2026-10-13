@@ -2,6 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f8fafc">
 <meta name="color-scheme" content="light">
@@ -602,6 +603,7 @@
   }
 
   /* ---------- Gemini 共通通信（モデル自動切替・エラー日本語化） ---------- */
+  var APP_VER = 'v1.7（10/13）';
   var GAPI = 'https://generativelanguage.googleapis.com/v1beta/';
   function gErr(code, msg) { var e = new Error(msg); e.code = code; return e; }
   function explainGeminiError(status, raw) {
@@ -1820,7 +1822,7 @@
           '<option value="local"' + (settings.engine === 'local' ? ' selected' : '') + '>内蔵エンジンのみ</option></select></div>' +
       '</div>' +
       '<div class="mt-3 flex flex-wrap items-center gap-2"><button data-a="test-ai" class="' + btnGhost + ' border border-slate-200"' + (S.aiTest === 'testing' ? ' disabled' : '') + '>' + (S.aiTest === 'testing' ? icon('loader', 'spin') + '接続テスト中…' : icon('check') + '接続テスト') + '</button>' +
-        '<button data-a="auto-model" class="' + btnGhost + ' border border-slate-200">' + icon('refresh') + '速いモデルを自動選択（速度テスト）</button></div>' +
+        '<button data-a="auto-model" class="' + btnGhost + ' border border-slate-200">' + icon('refresh') + '速いモデルを自動選択（速度テスト）</button><span class="text-[10px] text-slate-400 ml-auto">' + APP_VER + '</span></div>' +
       (S.aiTest === 'testing' ? '<p class="mt-2 text-xs text-slate-500">テスト中です（最大20秒ほどかかります）…</p>' : '') +
       (S.modelTest && S.modelTest.length ? '<div class="mt-2 rounded-xl border border-slate-200 divide-y divide-slate-100 text-xs">' + S.modelTest.map(function (r) {
         var cur = r.model === settings.model;
@@ -1867,7 +1869,7 @@
         '<button data-a="clear-done" class="' + btnGhost + ' border border-slate-200 hover:text-rose-600">' + icon('trash') + '練習記録削除</button>' +
       '</div>');
 
-    view.innerHTML = '<div class="space-y-4">' + ai + voice + sync + data + '<p class="text-center text-[11px] text-slate-400 py-2">Phrase Trainer ・ データはすべてこの端末に保存されます</p></div>';
+    view.innerHTML = '<div class="space-y-4">' + ai + voice + sync + data + '<p class="text-center text-[11px] text-slate-400 py-2">Phrase Trainer ' + APP_VER + ' ・ データはすべてこの端末に保存されます</p></div>';
   }
 
   function render() {
